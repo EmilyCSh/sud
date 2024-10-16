@@ -1,0 +1,13 @@
+/.build
+/sud
+sud.so
+sud.dylib
+sud.dll
+sud.a
+sud.lib
+sud-test-*
+*.exe
+*.pdb
+*.o
+*.obj
+*.lst

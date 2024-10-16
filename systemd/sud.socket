@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# systemd/sud.socket
+#
+# Copyright (C) Emily <info@emy.sh>
+
+[Unit]
+Description=Super User Daemon - privilege manager for systemd/Linux 
+Requires=sud@.service
+
+[Socket]
+ListenSequentialPacket=@sud_privilege_manager_socket
+Accept=yes
+
+[Install]
+WantedBy=sockets.target

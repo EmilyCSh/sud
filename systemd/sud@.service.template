@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# systemd/sud@.service.template
+#
+# Copyright (C) Emily <info@emy.sh>
+
+[Unit]
+Description=Super User Daemon - privilege manager for systemd/Linux
+PartOf=sud.socket
+
+[Service]
+Type=exec
+ExecStart=${SUD_BIN} --daemon
+StandardOutput=journal
+StandardError=journal
+ProtectSystem=strict
+PrivateDevices=true
+PrivateNetwork=true
+PrivateIPC=true
+ProtectHostname=true
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+RestrictSUIDSGID=true
+NoNewPrivileges=true
