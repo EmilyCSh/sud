@@ -91,8 +91,15 @@ int main_server() {
         return 1;
     }
 
-    pthread_create(&guard_thread, nullptr, *conn_guard_thread, &conn_fd);
-    pthread_detach(guard_thread);
+    if (pthread_create(&guard_thread, nullptr, *conn_guard_thread, &conn_fd) != 0) {
+        SUD_DEBUG_ERRNO();
+        return 1;
+    }
+
+    if (pthread_detach(guard_thread) != 0) {
+        SUD_DEBUG_ERRNO();
+        return 1;
+    }
 
     exec_pid = sud_handle(conn_fd, &error);
     if (exec_pid < 0) {
