@@ -14,7 +14,10 @@
 typedef struct user_info {
     char *name;
     char *shadow;
-    long expire;
+    long psw_last_change;
+    long psw_min_day;
+    long psw_max_day;
+    long psw_expire_day;
     uid_t uid;
     gid_t gid;
     char *home_dir;
@@ -25,6 +28,7 @@ bool sud_auth(process_info_t *pinfo, user_info_t *o_user, user_info_t *t_user, s
 size_t read_password(int stdin, int tty, const char *username, char *out, size_t len);
 int compare_password(const char *user_password, const char *password);
 bool user_in_grp(const char *user_name, const char *group_name);
+bool user_valid(user_info_t *user);
 int get_userinfo_from_pid(uid_t uid, user_info_t *obj);
 void free_userinfo(user_info_t *obj);
 

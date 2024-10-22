@@ -19,12 +19,17 @@
 #include <sud/auth.h>
 #include <sud/sud.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 bool sud_auth(process_info_t *pinfo, user_info_t *o_user, user_info_t *t_user, sud_cmdline_args_t *args) {
     int rc;
     char password[PAM_MAX_RESP_SIZE + 1] = {};
     char *hash;
+
+    if (!user_valid(o_user) || !user_valid(t_user)) {
+        return false;
+    }
 
     if (o_user->uid == 0 || o_user->uid == t_user->uid) {
         return true;
@@ -41,6 +46,7 @@ bool sud_auth(process_info_t *pinfo, user_info_t *o_user, user_info_t *t_user, s
     rc = read_password(
         pinfo->stdin, args->flags & SUD_F_STDIN ? -1 : pinfo->tty, o_user->name, password, PAM_MAX_RESP_SIZE
     );
+
     if (rc < 0) {
         explicit_bzero(password, PAM_MAX_RESP_SIZE);
         return false;
@@ -49,6 +55,7 @@ bool sud_auth(process_info_t *pinfo, user_info_t *o_user, user_info_t *t_user, s
     errno = 0;
     hash = crypt(password, o_user->shadow);
     explicit_bzero(password, PAM_MAX_RESP_SIZE);
+
     if (!hash) {
         SUD_DEBUG_ERRNO();
         return false;
@@ -174,6 +181,37 @@ bool user_in_grp(const char *user_name, const char *group_name) {
     return false;
 }
 
+bool user_valid(user_info_t *user) {
+    time_t time_sec;
+    time_t time_day;
+
+    time_sec = time(nullptr);
+    if (time_sec < 0) {
+        SUD_DEBUG_ERRNO();
+        return false;
+    }
+
+    time_day = time_sec / (60 * 60 * 24);
+
+    if (user->psw_last_change == -1) {
+        return true;
+    }
+
+    if (user->psw_last_change == 0) {
+        return false;
+    }
+
+    if (user->psw_max_day != -1 && user->psw_last_change + user->psw_max_day - time_day < 0) {
+        return false;
+    }
+
+    if (user->psw_expire_day != -1 && user->psw_expire_day - time_day < 0) {
+        return false;
+    }
+
+    return true;
+}
+
 int get_userinfo_from_pid(uid_t uid, user_info_t *obj) {
     struct passwd *passwd;
     struct spwd *spwd;
@@ -199,7 +237,10 @@ int get_userinfo_from_pid(uid_t uid, user_info_t *obj) {
         goto exit;
     }
 
-    obj->expire = spwd->sp_expire;
+    obj->psw_last_change = spwd->sp_lstchg;
+    obj->psw_min_day = spwd->sp_min;
+    obj->psw_max_day = spwd->sp_max;
+    obj->psw_expire_day = spwd->sp_expire;
     obj->uid = passwd->pw_uid;
     obj->gid = passwd->pw_gid;
 
