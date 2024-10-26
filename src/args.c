@@ -16,21 +16,9 @@
 #include <sud/sud.h>
 #include <sys/types.h>
 
-#define DAEMON_OPTION     0x80
-#define ISOLATE_OPTION    0x81
-#define COLOR_OPTION      0x82
-
-#define SUD_I_SYSTEM_MASK SUD_I_SYSTEM | SUD_I_SYSTEM_FULL | SUD_I_SYSTEM_STRICT
-#define SUD_I_SYSTEM_ERR                                                                                               \
-    "options '--isolate=system', '--isolate=system-full' and '--isolate=system-strict' "                               \
-    "cannot be used together"
-
-#define SUD_I_HOME_MASK SUD_I_HOME | SUD_I_HOME_RO | SUD_I_HOME_TMPFS
-#define SUD_I_HOME_ERR                                                                                                 \
-    "options '--isolate=home', '--isolate=home-ro' and '--isolate=home-tmpfs' "                                        \
-    "cannot be used together"
-
-#define SET_MULTI_FLAG(value, mask, dst) (((dst) & (mask)) ? false : (((dst) |= (value)), true))
+#define DAEMON_OPTION  0x80
+#define ISOLATE_OPTION 0x81
+#define COLOR_OPTION   0x82
 
 const char *argp_program_version = "0.1";
 const char *argp_program_bug_address = "<erny@castellotti.net>";
@@ -157,35 +145,17 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
 
         case ISOLATE_OPTION: {
             if (strcmp(arg, "system") == 0) {
-                if (!SET_MULTI_FLAG(SUD_I_SYSTEM, SUD_I_SYSTEM_MASK, arguments->isolate)) {
-                    argp_error(state, SUD_I_SYSTEM_ERR);
-                    return ARGP_KEY_ERROR;
-                }
+                arguments->isolate |= SUD_I_SYSTEM;
             } else if (strcmp(arg, "system-full") == 0) {
-                if (!SET_MULTI_FLAG(SUD_I_SYSTEM_FULL, SUD_I_SYSTEM_MASK, arguments->isolate)) {
-                    argp_error(state, SUD_I_SYSTEM_ERR);
-                    return ARGP_KEY_ERROR;
-                }
+                arguments->isolate |= SUD_I_SYSTEM_FULL;
             } else if (strcmp(arg, "system-strict") == 0) {
-                if (!SET_MULTI_FLAG(SUD_I_SYSTEM_STRICT, SUD_I_SYSTEM_MASK, arguments->isolate)) {
-                    argp_error(state, SUD_I_SYSTEM_ERR);
-                    return ARGP_KEY_ERROR;
-                }
+                arguments->isolate |= SUD_I_SYSTEM_STRICT;
             } else if (strcmp(arg, "home") == 0) {
-                if (!SET_MULTI_FLAG(SUD_I_HOME, SUD_I_HOME_MASK, arguments->isolate)) {
-                    argp_error(state, SUD_I_HOME_ERR);
-                    return ARGP_KEY_ERROR;
-                }
+                arguments->isolate |= SUD_I_HOME;
             } else if (strcmp(arg, "home-ro") == 0) {
-                if (!SET_MULTI_FLAG(SUD_I_HOME_RO, SUD_I_HOME_MASK, arguments->isolate)) {
-                    argp_error(state, SUD_I_HOME_ERR);
-                    return ARGP_KEY_ERROR;
-                }
+                arguments->isolate |= SUD_I_HOME_RO;
             } else if (strcmp(arg, "home-tmpfs") == 0) {
-                if (!SET_MULTI_FLAG(SUD_I_HOME_TMPFS, SUD_I_HOME_MASK, arguments->isolate)) {
-                    argp_error(state, SUD_I_HOME_ERR);
-                    return ARGP_KEY_ERROR;
-                }
+                arguments->isolate |= SUD_I_HOME_TMPFS;
             } else if (strcmp(arg, "tmp") == 0) {
                 arguments->isolate |= SUD_I_TMP;
             } else if (strcmp(arg, "devices") == 0) {

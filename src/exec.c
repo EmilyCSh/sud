@@ -5,6 +5,7 @@
  *  Copyright (C) Emily <info@emy.sh>
  */
 
+#include <stdarg.h>
 #include <stdlib.h>
 #include <sud/exec.h>
 #include <sud/sud.h>
@@ -70,6 +71,26 @@ int add_env_arg(char **p, char *name, char *value) {
     add_args(*p, arg);
     free(arg);
     return 0;
+}
+
+bool multi_flag_check(int value, int wflag, ...) {
+    int oflag;
+    va_list arglist;
+
+    if (!(value & wflag)) {
+        return false;
+    }
+
+    va_start(arglist, wflag);
+
+    while ((oflag = va_arg(arglist, int)) != 0) {
+        if (value & oflag) {
+            return false;
+        }
+    }
+
+    va_end(arglist);
+    return true;
 }
 
 pid_t sud_exec(process_info_t *pinfo, user_info_t *o_user, user_info_t *t_user, sud_cmdline_args_t *args) {
@@ -148,24 +169,32 @@ pid_t sud_exec(process_info_t *pinfo, user_info_t *o_user, user_info_t *t_user, 
 
     add_env_arg(&next_arg, "SHELL", shell);
 
-    if (args->isolate & SUD_I_SYSTEM) {
+    if (multi_flag_check(
+            args->isolate, SUD_I_SYSTEM,
+            /* more restrictive */
+            SUD_I_SYSTEM_FULL, SUD_I_SYSTEM_STRICT, 0
+        )) {
         add_args(next_arg, "-pProtectSystem=true");
     }
 
-    if (args->isolate & SUD_I_SYSTEM_FULL) {
+    if (multi_flag_check(args->isolate, SUD_I_SYSTEM_FULL, /* more restrictive */ SUD_I_SYSTEM_STRICT, 0)) {
         add_args(next_arg, "-pProtectSystem=full");
     }
 
-    if (args->isolate & SUD_I_SYSTEM_STRICT) {
+    if (multi_flag_check(args->isolate, SUD_I_SYSTEM_STRICT, /* more restrictive */ 0)) {
         add_args(next_arg, "-pProtectSystem=strict");
     }
 
-    if (args->isolate & SUD_I_HOME) {
-        add_args(next_arg, "-pProtectHome=true");
+    if (multi_flag_check(args->isolate, SUD_I_HOME_RO, /* more restrictive */ SUD_I_TMP, SUD_I_HOME, 0)) {
+        add_args(next_arg, "-pProtectHome=read-only");
     }
 
-    if (args->isolate & SUD_I_TMP) {
-        add_args(next_arg, "-pPrivateTmp=true");
+    if (multi_flag_check(args->isolate, SUD_I_TMP, /* more restrictive */ SUD_I_HOME, 0)) {
+        add_args(next_arg, "-pProtectHome=tmpfs");
+    }
+
+    if (multi_flag_check(args->isolate, SUD_I_HOME, /* more restrictive */ 0)) {
+        add_args(next_arg, "-pProtectHome=true");
     }
 
     if (args->isolate & SUD_I_DEVICES) {
