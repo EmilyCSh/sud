@@ -6,14 +6,13 @@
  */
 
 #include <argp.h>
-#include <ctype.h>
 #include <errno.h>
 #include <limits.h>
-#include <pwd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sud/args.h>
 #include <sud/sud.h>
+#include <sud/utils.h>
 #include <sys/types.h>
 
 #define DAEMON_OPTION  0x80
@@ -22,57 +21,6 @@
 
 const char *argp_program_version = "0.1";
 const char *argp_program_bug_address = "<erny@castellotti.net>";
-
-int get_uid_from_str(const char *str) {
-    struct passwd *passwd = getpwnam(str);
-    long num;
-
-    for (size_t i = 0; i < strlen(str); i++) {
-        if (!isdigit(str[i])) {
-            return -1;
-        }
-    }
-
-    num = strtol(str, nullptr, 10);
-
-    if (num >= INT_MAX || num < 0) {
-        return -1;
-    }
-
-    // Check if valid
-    errno = 0;
-    passwd = getpwuid(num);
-    if (!passwd) {
-        SUD_DEBUG_ERRNO();
-        return -1;
-    }
-
-    return passwd->pw_uid;
-}
-
-int get_uid_from_name(const char *str) {
-    struct passwd *passwd;
-
-    errno = 0;
-    passwd = getpwnam(str);
-    if (!passwd) {
-        SUD_DEBUG_ERRNO();
-        return -1;
-    }
-
-    return passwd->pw_uid;
-}
-
-int get_uid_from_arg(const char *str) {
-    int uid;
-
-    uid = get_uid_from_str(str);
-    if (uid >= 0) {
-        return uid;
-    }
-
-    return get_uid_from_name(str);
-}
 
 static struct argp_option options[] = {
     {"color", COLOR_OPTION, "color", 0, "Set background color (default = \"41\")", 0},
@@ -98,6 +46,7 @@ static struct argp_option options[] = {
 
 static error_t parse_opt(int key, char *arg, struct argp_state *state) {
     int uid;
+    int isolate;
     sud_cmdline_args_t *arguments = state->input;
 
     switch (key) {
@@ -122,7 +71,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
         }
 
         case 'u': {
-            uid = get_uid_from_arg(arg);
+            uid = get_uid_from_str(arg);
             if (uid < 0) {
                 argp_error(state, "invalid uid");
                 return ARGP_KEY_ERROR;
@@ -144,32 +93,13 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state) {
         }
 
         case ISOLATE_OPTION: {
-            if (strcmp(arg, "system") == 0) {
-                arguments->isolate |= SUD_I_SYSTEM;
-            } else if (strcmp(arg, "system-full") == 0) {
-                arguments->isolate |= SUD_I_SYSTEM_FULL;
-            } else if (strcmp(arg, "system-strict") == 0) {
-                arguments->isolate |= SUD_I_SYSTEM_STRICT;
-            } else if (strcmp(arg, "home") == 0) {
-                arguments->isolate |= SUD_I_HOME;
-            } else if (strcmp(arg, "home-ro") == 0) {
-                arguments->isolate |= SUD_I_HOME_RO;
-            } else if (strcmp(arg, "home-tmpfs") == 0) {
-                arguments->isolate |= SUD_I_HOME_TMPFS;
-            } else if (strcmp(arg, "tmp") == 0) {
-                arguments->isolate |= SUD_I_TMP;
-            } else if (strcmp(arg, "devices") == 0) {
-                arguments->isolate |= SUD_I_DEVICES;
-            } else if (strcmp(arg, "net") == 0) {
-                arguments->isolate |= SUD_I_NET;
-            } else if (strcmp(arg, "user") == 0) {
-                arguments->isolate |= SUD_I_USER;
-            } else if (strcmp(arg, "kernel-tunables") == 0) {
-                arguments->isolate |= SUD_I_KTUNABLES;
-            } else if (strcmp(arg, "kernel-logs") == 0) {
-                arguments->isolate |= SUD_I_KLOGS;
+            isolate = parse_isolate_str(arg);
+            if (isolate < 0) {
+                argp_error(state, "isolate option parse fail!");
+                return ARGP_KEY_ERROR;
             }
 
+            arguments->isolate |= isolate;
             break;
         }
 
