@@ -34,5 +34,10 @@ int get_process_info_conn(int unix_conn, process_info_t *obj);
 void free_process_info(process_info_t *obj);
 char *getenv_envp_str(const char *name, char **envp);
 char *getenv_envp(const char *name, char **envp);
+struct passwd *get_passwd_from_str(const char *str);
+int get_uid_from_str(const char *str);
+struct group *get_grp_from_str(const char *str);
+int get_gid_from_str(const char *str);
+int parse_isolate_str(const char *str);
 
 #endif // SUD_PROCFS_H_
