@@ -17,6 +17,7 @@ typedef struct sud_cmdline_args {
     uid_t user;
     char *workdir;
     char *background_color;
+    char *cmd;
     int argc;
     char **argv;
 } sud_cmdline_args_t;

@@ -227,9 +227,9 @@ pid_t sud_exec(process_info_t *pinfo, user_info_t *o_user, user_info_t *t_user, 
 
     if (args->flags & SUD_F_SHELL) {
         add_args(next_arg, shell);
-
     } else {
         add_args(next_arg, "--"); // Our cmd after this
+        add_args(next_arg, args->cmd);
 
         for (int i = 0; i < args->argc; i++) {
             if (!add_args_check(argv_buf, next_arg, arg_max, args->argv[i])) {
