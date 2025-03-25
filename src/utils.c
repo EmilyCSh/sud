@@ -442,3 +442,68 @@ int parse_isolate_str(const char *str) {
 
     return -1;
 }
+
+bool is_executable(const char *path) {
+    if (!access(path, X_OK)) {
+        struct stat st;
+
+        if (!stat(path, &st) && S_ISREG(st.st_mode)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+int find_executable(const char *relative_path, const char *path_env, const char *workdir, char full_path[PATH_MAX]) {
+    char *path_dup;
+    const char *token;
+    int exit_code = -1;
+    char prev_workdir[PATH_MAX];
+
+    path_dup = strdup(path_env);
+    if (!path_dup) {
+        return -1;
+    }
+
+    token = strtok(path_dup, ":");
+
+    if (!getcwd(prev_workdir, PATH_MAX)) {
+        return -1;
+    }
+
+    if (chdir(workdir) < 0) {
+        return -1;
+    }
+
+    if (strchr(relative_path, '/')) {
+        if (!realpath(relative_path, full_path)) {
+            goto exit;
+        }
+
+        if (!is_executable(full_path)) {
+            goto exit;
+        }
+
+        exit_code = 0;
+        goto exit;
+    } else {
+        while (token) {
+            snprintf(full_path, PATH_MAX, "%s/%s", token, relative_path);
+
+            if (is_executable(full_path)) {
+                exit_code = 0;
+                goto exit;
+            }
+
+            token = strtok(nullptr, ":");
+        }
+    }
+
+exit:
+    if (chdir(prev_workdir) < 0) {
+        return -1;
+    }
+
+    return exit_code;
+}

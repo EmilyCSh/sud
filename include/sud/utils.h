@@ -39,5 +39,7 @@ int get_uid_from_str(const char *str);
 struct group *get_grp_from_str(const char *str);
 int get_gid_from_str(const char *str);
 int parse_isolate_str(const char *str);
+bool is_executable(const char *path);
+int find_executable(const char *relative_path, const char *path_env, const char *workdir, char full_path[PATH_MAX]);
 
 #endif // SUD_PROCFS_H_

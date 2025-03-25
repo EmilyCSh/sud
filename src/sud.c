@@ -19,6 +19,8 @@ pid_t sud_handle(int conn_fd, int *error) {
     user_info_t original_user_info;
     user_info_t target_user_info;
     sud_cmdline_args_t args;
+    char *process_path;
+    char cmd[PATH_MAX];
 
     rc = get_process_info_conn(conn_fd, &pinfo);
     if (rc < 0) {
@@ -44,9 +46,25 @@ pid_t sud_handle(int conn_fd, int *error) {
         goto exit;
     }
 
+    process_path = getenv_envp("PATH", pinfo.envp);
+    if (!process_path) {
+        SUD_ERR("Missing env PATH in caller process\n");
+        goto exit;
+    }
+
     if (!args.workdir) {
         args.workdir = pinfo.cwd;
     }
+
+    rc = find_executable(args.argv[0], process_path, args.workdir, cmd);
+    if (rc < 0) {
+        SUD_ERR("Can't find cmd to be execute'\n");
+        goto exit;
+    }
+
+    args.cmd = cmd;
+    args.argc = args.argc - 1;
+    args.argv = &(args.argv[1]);
 
     SUD_FNOTICE("Authentication for user %d from process %d started\n", pinfo.uid, pinfo.pid);
 
