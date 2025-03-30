@@ -9,18 +9,26 @@
 #include <stdio.h>
 #include <sud/args.h>
 #include <sud/auth.h>
+#include <sud/config.h>
 #include <sud/exec.h>
 #include <sud/sud.h>
 
 pid_t sud_handle(int conn_fd, int *error) {
     int rc;
     pid_t exec_pid = -1;
+    sud_global_config_t global_conf;
     process_info_t pinfo;
     user_info_t original_user_info;
     user_info_t target_user_info;
     sud_cmdline_args_t args;
     char *process_path;
     char cmd[PATH_MAX];
+
+    rc = load_global_config(&global_conf);
+    if (rc < 0) {
+        SUD_ERR("Failed to load global config\n");
+        goto exit;
+    }
 
     rc = get_process_info_conn(conn_fd, &pinfo);
     if (rc < 0) {
@@ -56,6 +64,10 @@ pid_t sud_handle(int conn_fd, int *error) {
         args.workdir = pinfo.cwd;
     }
 
+    if (!args.background_color) {
+        args.background_color = global_conf.background_color;
+    }
+
     rc = find_executable(args.argv[0], process_path, args.workdir, cmd);
     if (rc < 0) {
         SUD_ERR("Can't find cmd to be execute'\n");
@@ -68,7 +80,7 @@ pid_t sud_handle(int conn_fd, int *error) {
 
     SUD_FNOTICE("Authentication for user %d from process %d started\n", pinfo.uid, pinfo.pid);
 
-    if (!sud_auth(&pinfo, &original_user_info, &target_user_info, &args)) {
+    if (!sud_auth(&pinfo, &original_user_info, &target_user_info, &args, &global_conf)) {
         SUD_FERR("Authentication for user %d from process %d failed\n", pinfo.uid, pinfo.pid);
         *error = SUD_MSG_ERROR_AUTH;
         goto exit;

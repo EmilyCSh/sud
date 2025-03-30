@@ -22,11 +22,10 @@
 #include <time.h>
 #include <unistd.h>
 
-bool sud_auth(process_info_t *pinfo, user_info_t *o_user, user_info_t *t_user, sud_cmdline_args_t *args) {
-    int rc;
-    char password[PAM_MAX_RESP_SIZE + 1] = {};
-    char *hash;
-
+bool sud_auth(
+    process_info_t *pinfo, user_info_t *o_user, user_info_t *t_user, sud_cmdline_args_t *args,
+    sud_global_config_t *global_conf
+) {
     if (!user_valid(o_user) || !user_valid(t_user)) {
         return false;
     }
@@ -42,6 +41,18 @@ bool sud_auth(process_info_t *pinfo, user_info_t *o_user, user_info_t *t_user, s
     if (!user_in_grp(o_user->name, SUD_PRIVILEGED_GROUP)) {
         return false;
     }
+
+    if (global_conf->auth_mode == SUD_C_AUTH_SHADOW) {
+        return auth_shadow(pinfo, o_user, args);
+    } else {
+        return false;
+    }
+}
+
+bool auth_shadow(process_info_t *pinfo, user_info_t *o_user, sud_cmdline_args_t *args) {
+    int rc;
+    char password[PAM_MAX_RESP_SIZE + 1] = {};
+    char *hash;
 
     rc = read_password(
         pinfo->stdin, args->flags & SUD_F_STDIN ? -1 : pinfo->tty, o_user->name, password, PAM_MAX_RESP_SIZE

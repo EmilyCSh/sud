@@ -136,9 +136,6 @@ static struct argp argp = {options, parse_opt, "[command [arg ...]]", 0, 0, 0, 0
 
 int __parse_cmdline(int argc, char *argv[], sud_cmdline_args_t *args, int options) {
     memset(args, 0, sizeof(sud_cmdline_args_t));
-
-    args->background_color = "41";
-
     return argp_parse(&argp, argc, argv, options, 0, args);
 }
 
