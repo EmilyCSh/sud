@@ -12,6 +12,7 @@
 
 #define SUD_C_CONF_PATH   "/etc/sud.conf"
 #define SUD_C_AUTH_SHADOW 0x01
+#define SUD_C_AUTH_PAM    0x02
 
 typedef struct sud_global_config {
     int auth_mode;

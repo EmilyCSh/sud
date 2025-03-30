@@ -43,6 +43,8 @@ int load_global_config(sud_global_config_t *conf) {
         if (strcmp(subkey, "auth_mode") == 0) {
             if (strcmp(value, "shadow") == 0) {
                 conf->auth_mode = SUD_C_AUTH_SHADOW;
+            } else if (strcmp(value, "pam") == 0) {
+                conf->auth_mode = SUD_C_AUTH_PAM;
             } else {
                 SUD_FERR("Unsupported value \"%s\" for option auth_mode\n", value);
                 return -1;

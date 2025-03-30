@@ -44,6 +44,8 @@ bool sud_auth(
 
     if (global_conf->auth_mode == SUD_C_AUTH_SHADOW) {
         return auth_shadow(pinfo, o_user, args);
+    } else if (global_conf->auth_mode == SUD_C_AUTH_PAM) {
+        return auth_pam(pinfo, o_user, args);
     } else {
         return false;
     }
@@ -73,6 +75,98 @@ bool auth_shadow(process_info_t *pinfo, user_info_t *o_user, sud_cmdline_args_t 
     }
 
     return compare_password(hash, o_user->shadow) == 0;
+}
+
+struct pam_args {
+    process_info_t *pinfo;
+    user_info_t *o_user;
+    sud_cmdline_args_t *args;
+};
+
+int pam_auth_conv(int msg_len, const struct pam_message **msg, struct pam_response **resp, void *flags) {
+    int rc;
+    struct pam_response *reply = '\0';
+    char password[PAM_MAX_RESP_SIZE + 1] = {};
+    struct pam_args *pam_args = (struct pam_args *)flags;
+
+    for (int i = 0; i < msg_len; i++) {
+        switch (msg[i]->msg_style) {
+            case PAM_PROMPT_ECHO_OFF: {
+                rc = read_password(
+                    pam_args->pinfo->stdin, pam_args->args->flags & SUD_F_STDIN ? -1 : pam_args->pinfo->tty,
+                    pam_args->o_user->name, password, PAM_MAX_RESP_SIZE
+                );
+
+                if (rc < 0) {
+                    explicit_bzero(password, PAM_MAX_RESP_SIZE);
+                    return PAM_CONV_ERR;
+                }
+
+                reply = malloc(sizeof(struct pam_response));
+                if (!reply) {
+                    return PAM_CONV_ERR;
+                }
+
+                reply->resp = strdup(password);
+                reply->resp_retcode = 0;
+                *resp = reply;
+
+                explicit_bzero(password, PAM_MAX_RESP_SIZE);
+                break;
+            }
+
+            case PAM_ERROR_MSG: {
+                write_str(pam_args->pinfo->stderr, msg[i]->msg);
+                write_str(pam_args->pinfo->stderr, "\n");
+                break;
+            }
+
+            case PAM_TEXT_INFO: {
+                write_str(pam_args->pinfo->stdout, msg[i]->msg);
+                write_str(pam_args->pinfo->stdout, "\n");
+                break;
+            }
+
+            default: {
+                if (*resp != (struct pam_response *)'\0') {
+                    explicit_bzero(reply->resp, strlen(reply->resp));
+                    free(reply->resp);
+                    free(reply);
+                }
+
+                return PAM_CONV_ERR;
+            }
+        }
+    }
+
+    return PAM_SUCCESS;
+}
+
+bool auth_pam(process_info_t *pinfo, user_info_t *o_user, sud_cmdline_args_t *args) {
+    int rc;
+    pam_handle_t *pamh;
+
+    struct pam_args pam_args = {pinfo, o_user, args};
+
+    struct pam_conv conv = {pam_auth_conv, (void *)&pam_args};
+
+    rc = pam_start("sud", o_user->name, &conv, &pamh);
+    if (rc != PAM_SUCCESS) {
+        return false;
+    }
+
+    rc = pam_authenticate(pamh, 0);
+    if (rc != PAM_SUCCESS) {
+        return false;
+    }
+
+    rc = pam_acct_mgmt(pamh, 0);
+    if (rc != PAM_SUCCESS) {
+        return false;
+    }
+
+    pam_end(pamh, rc);
+    return true;
 }
 
 size_t read_password(int stdin, int tty, const char *username, char *out, size_t len) {
