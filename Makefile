@@ -11,7 +11,7 @@ BUILD_DIR ?= .build
 OBJ_DIR ?= $(BUILD_DIR)/obj
 
 CFLAGS = -I$(INCLUDE_DIR) -std=gnu23 -D_GNU_SOURCE -Wall -Wextra -Werror -Werror=vla -O2 -fhardened
-LFLAGS = -lcrypt -lsystemd -Wl,--fatal-warnings -Wl,--warn-common -Wl,--gc-sections -Wl,-z,now
+LFLAGS = -lcrypt -lsystemd -lpam -Wl,--fatal-warnings -Wl,--warn-common -Wl,--gc-sections -Wl,-z,now
 CLANG_FORMAT_FLAGS =  --Werror --dry-run --ferror-limit=5
 
 PREFIX ?= /usr
