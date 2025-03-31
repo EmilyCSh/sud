@@ -17,6 +17,8 @@
 typedef struct sud_global_config {
     int auth_mode;
     char background_color[256];
+    bool password_echo_enable;
+    char password_echo[256];
 } sud_global_config_t;
 
 int load_global_config(sud_global_config_t *conf);

@@ -16,7 +16,7 @@
 pid_t sud_handle(int conn_fd, int *error) {
     int rc;
     pid_t exec_pid = -1;
-    sud_global_config_t global_conf;
+    sud_global_config_t global_conf = {};
     process_info_t pinfo;
     user_info_t original_user_info;
     user_info_t target_user_info;

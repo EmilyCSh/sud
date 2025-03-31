@@ -29,9 +29,13 @@ bool sud_auth(
     process_info_t *pinfo, user_info_t *o_user, user_info_t *t_user, sud_cmdline_args_t *args,
     sud_global_config_t *global_conf
 );
-bool auth_shadow(process_info_t *pinfo, user_info_t *o_user, sud_cmdline_args_t *args);
-bool auth_pam(process_info_t *pinfo, user_info_t *o_user, sud_cmdline_args_t *args);
-size_t read_password(int stdin, int tty, const char *username, char *out, size_t len);
+bool auth_shadow(
+    process_info_t *pinfo, user_info_t *o_user, sud_cmdline_args_t *args, sud_global_config_t *global_conf
+);
+bool auth_pam(process_info_t *pinfo, user_info_t *o_user, sud_cmdline_args_t *args, sud_global_config_t *global_conf);
+size_t read_password(
+    int stdin, int tty, const char *username, char *out, size_t len, bool password_echo_enable, char *password_echo
+);
 int compare_password(const char *user_password, const char *password);
 bool user_in_grp(const char *user_name, const char *group_name);
 bool user_valid(user_info_t *user);

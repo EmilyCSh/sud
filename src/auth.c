@@ -43,21 +43,24 @@ bool sud_auth(
     }
 
     if (global_conf->auth_mode == SUD_C_AUTH_SHADOW) {
-        return auth_shadow(pinfo, o_user, args);
+        return auth_shadow(pinfo, o_user, args, global_conf);
     } else if (global_conf->auth_mode == SUD_C_AUTH_PAM) {
-        return auth_pam(pinfo, o_user, args);
+        return auth_pam(pinfo, o_user, args, global_conf);
     } else {
         return false;
     }
 }
 
-bool auth_shadow(process_info_t *pinfo, user_info_t *o_user, sud_cmdline_args_t *args) {
+bool auth_shadow(
+    process_info_t *pinfo, user_info_t *o_user, sud_cmdline_args_t *args, sud_global_config_t *global_conf
+) {
     int rc;
     char password[PAM_MAX_RESP_SIZE + 1] = {};
     char *hash;
 
     rc = read_password(
-        pinfo->stdin, args->flags & SUD_F_STDIN ? -1 : pinfo->tty, o_user->name, password, PAM_MAX_RESP_SIZE
+        pinfo->stdin, args->flags & SUD_F_STDIN ? -1 : pinfo->tty, o_user->name, password, PAM_MAX_RESP_SIZE,
+        global_conf->password_echo_enable, global_conf->password_echo
     );
 
     if (rc < 0) {
@@ -81,6 +84,7 @@ struct pam_args {
     process_info_t *pinfo;
     user_info_t *o_user;
     sud_cmdline_args_t *args;
+    sud_global_config_t *global_conf;
 };
 
 int pam_auth_conv(int msg_len, const struct pam_message **msg, struct pam_response **resp, void *flags) {
@@ -94,7 +98,8 @@ int pam_auth_conv(int msg_len, const struct pam_message **msg, struct pam_respon
             case PAM_PROMPT_ECHO_OFF: {
                 rc = read_password(
                     pam_args->pinfo->stdin, pam_args->args->flags & SUD_F_STDIN ? -1 : pam_args->pinfo->tty,
-                    pam_args->o_user->name, password, PAM_MAX_RESP_SIZE
+                    pam_args->o_user->name, password, PAM_MAX_RESP_SIZE, pam_args->global_conf->password_echo_enable,
+                    pam_args->global_conf->password_echo
                 );
 
                 if (rc < 0) {
@@ -142,11 +147,11 @@ int pam_auth_conv(int msg_len, const struct pam_message **msg, struct pam_respon
     return PAM_SUCCESS;
 }
 
-bool auth_pam(process_info_t *pinfo, user_info_t *o_user, sud_cmdline_args_t *args) {
+bool auth_pam(process_info_t *pinfo, user_info_t *o_user, sud_cmdline_args_t *args, sud_global_config_t *global_conf) {
     int rc;
     pam_handle_t *pamh;
 
-    struct pam_args pam_args = {pinfo, o_user, args};
+    struct pam_args pam_args = {pinfo, o_user, args, global_conf};
 
     struct pam_conv conv = {pam_auth_conv, (void *)&pam_args};
 
@@ -169,7 +174,9 @@ bool auth_pam(process_info_t *pinfo, user_info_t *o_user, sud_cmdline_args_t *ar
     return true;
 }
 
-size_t read_password(int stdin, int tty, const char *username, char *out, size_t len) {
+size_t read_password(
+    int stdin, int tty, const char *username, char *out, size_t len, bool password_echo_enable, char *password_echo
+) {
     int rc = -1;
     size_t i = 0;
     char ch;
@@ -217,8 +224,8 @@ size_t read_password(int stdin, int tty, const char *username, char *out, size_t
         } else {
             out[i++] = ch;
 
-            if (tty >= 0) {
-                write_str(tty, "*");
+            if (tty >= 0 && password_echo_enable) {
+                write_str(tty, password_echo);
             }
         }
     }
