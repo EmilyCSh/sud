@@ -1,2 +1,4 @@
 global auth_mode shadow
 global background_color 41
+global password_echo_enable true
+global password_echo *

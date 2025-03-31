@@ -9,7 +9,7 @@ Description=Super User Daemon - privilege manager for systemd/Linux
 Requires=sud@.service
 
 [Socket]
-ListenSequentialPacket=@sud_privilege_manager_socket
+ListenStream=@sud_privilege_manager_socket
 Accept=yes
 
 [Install]
