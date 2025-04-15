@@ -84,7 +84,18 @@ pub fn main_client() -> SudResponseMsg {
 
     if msg.error != SudMsgError::Success {
         let _ = tcsetattr(tty_fd, TCSANOW, &term_attrs);
-        eprintln!("Error: {}", msg.error.clone() as i32);
+
+        if msg.error == SudMsgError::Generic {
+            eprintln!("sud: generic error in sud daemon");
+        }
+
+        if msg.error == SudMsgError::Auth {
+            eprintln!("sud: authentication failed");
+        }
+
+        if msg.error == SudMsgError::ClientError {
+            eprintln!("sud: client failed to connect to daemon/failed to receive response");
+        }
     }
 
     msg
