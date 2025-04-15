@@ -10,7 +10,7 @@ use crate::auth::{UserInfo, sud_auth};
 use crate::config::SudGlobalConfig;
 use crate::exec::sud_exec;
 use crate::utils::ProcessInfo;
-use clap::{self, Parser};
+use clap;
 use libsystemd;
 use nix;
 use std::fmt;
@@ -20,8 +20,6 @@ use std::num;
 use std::os::fd::BorrowedFd;
 use std::process::Child;
 
-pub const SUD_MIN_ARG: u32 = 0x200000;
-pub const SUD_PRIVILEGED_GROUP: &str = "wheel";
 pub const SUD_SOCKET_PATH: &str = "sud_privilege_manager_socket";
 pub const SUD_MAGIC: &str = "____sud_privilege_manager____";
 
@@ -145,7 +143,7 @@ pub fn sud_handle(conn_fd: BorrowedFd) -> Result<Child, SudError> {
 
     let original_userinfo = UserInfo::from_uid(pinfo.uid)?;
 
-    let args = SudCmdlineArgs::try_parse_from(&pinfo.argv)?;
+    let args = SudCmdlineArgs::parse(&pinfo)?;
 
     let target_userinfo = args.get_user()?;
 
@@ -160,7 +158,7 @@ pub fn sud_handle(conn_fd: BorrowedFd) -> Result<Child, SudError> {
         &target_userinfo,
         &args,
         &global_config,
-    ) {
+    )? {
         return Err(SudError::AuthFail(format!(
             "Authentication for user {} from process {} failed",
             pinfo.uid, pinfo.pid

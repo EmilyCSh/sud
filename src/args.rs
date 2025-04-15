@@ -7,6 +7,7 @@
 
 use crate::auth::UserInfo;
 use crate::sud;
+use crate::utils::{ProcessInfo, find_executable};
 use clap::Parser;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -105,6 +106,32 @@ pub struct SudCmdlineArgs {
 }
 
 impl SudCmdlineArgs {
+    pub fn parse(pinfo: &ProcessInfo) -> Result<Self, sud::SudError> {
+        let mut args = SudCmdlineArgs::try_parse_from(&pinfo.argv)?;
+
+        args.workdir = match args.workdir {
+            Some(workdir) => Some(workdir),
+            None => Some(pinfo.cwd.to_string_lossy().to_string()),
+        };
+
+        if args.command.is_some() {
+            let process_path = pinfo.get_env("PATH").ok_or(sud::SudError::NotFound(
+                "Missing env PATH in caller process".into(),
+            ))?;
+
+            args.command = Some(
+                find_executable(
+                    &args.command.unwrap(),
+                    &process_path,
+                    &args.workdir.clone().unwrap(),
+                )
+                .ok_or(sud::SudError::NotFound("Command not found in PATH".into()))?,
+            );
+        }
+
+        Ok(args)
+    }
+
     pub fn get_isolate(&self, flag_check: SudIsolateFlags) -> bool {
         self.isolate.iter().any(|s| s == flag_check.as_str())
     }
