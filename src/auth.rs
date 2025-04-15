@@ -8,7 +8,7 @@
 
 use crate::args::SudCmdlineArgs;
 use crate::c_ffi;
-use crate::config::{ConfigAuthMode, SudGlobalConfig};
+use crate::config::{ConfigAuthMode, SudGlobalConfig, SudPolicy, policy_is_permit};
 use crate::sud;
 use crate::utils::ProcessInfo;
 use nix::fcntl;
@@ -130,30 +130,37 @@ pub fn sud_auth(
     t_user: &UserInfo,
     args: &SudCmdlineArgs,
     global_conf: &SudGlobalConfig,
-) -> bool {
+) -> Result<bool, sud::SudError> {
     if !o_user.is_user_valid() || !t_user.is_user_valid() {
-        return false;
+        return Ok(false);
     }
 
     if o_user.user.uid == 0 || o_user.user.uid == t_user.user.uid {
-        return true;
+        return Ok(true);
     }
 
     if args.non_interactive && !args.stdin {
-        return false;
+        return Ok(false);
     }
 
-    if !o_user.is_in_group(sud::SUD_PRIVILEGED_GROUP) {
-        return false;
+    let cmd = args
+        .command
+        .clone()
+        .ok_or(sud::SudError::NotFound("Missing command in args".into()))?;
+
+    let policies = SudPolicy::load()?;
+
+    if !policy_is_permit(&policies, o_user, t_user, cmd) {
+        return Ok(false);
     }
 
     if global_conf.auth_mode == ConfigAuthMode::Shadow {
-        return auth_shadow(pinfo, &o_user, &args, &global_conf);
+        return Ok(auth_shadow(pinfo, &o_user, &args, &global_conf)?);
     } else if global_conf.auth_mode == ConfigAuthMode::Pam {
-        return auth_pam(pinfo, &o_user, &args, &global_conf);
+        return Ok(auth_pam(pinfo, &o_user, &args, &global_conf));
     }
 
-    false
+    Ok(false)
 }
 
 fn auth_shadow(
@@ -161,24 +168,17 @@ fn auth_shadow(
     o_user: &UserInfo,
     args: &SudCmdlineArgs,
     global_conf: &SudGlobalConfig,
-) -> bool {
+) -> Result<bool, sud::SudError> {
     let o_shadow = match &o_user.shadow.passwd {
         AccountStatus::Active(shadow) => shadow,
-        _ => return false,
+        _ => return Ok(false),
     };
 
-    let mut password = match read_password(pinfo, o_user, args, global_conf) {
-        Ok(password) => password,
-        Err(_) => return false,
-    };
-
-    let hash = match c_ffi::crypt::crypt(&password, o_shadow.to_string()) {
-        Ok(hash) => hash,
-        Err(_) => return false,
-    };
-
+    let mut password = read_password(pinfo, o_user, args, global_conf)?;
+    let hash = c_ffi::crypt::crypt(&password, o_shadow.to_string())?;
     password.zero_out();
-    time_compare(&hash, o_shadow)
+
+    Ok(time_compare(&hash, o_shadow))
 }
 
 fn auth_pam(

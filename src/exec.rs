@@ -10,7 +10,6 @@ use crate::auth::UserInfo;
 use crate::config::SudGlobalConfig;
 use crate::sud;
 use crate::utils::ProcessInfo;
-use crate::utils::find_executable;
 use nix::unistd::isatty;
 use std::os::fd::AsRawFd;
 use std::process::{Child, Command};
@@ -47,11 +46,7 @@ pub fn sud_exec(
     command.arg("--wait");
 
     command.arg("--working-directory");
-    let workdir = match args.workdir {
-        Some(ref workdir) => workdir,
-        None => &pinfo.cwd.to_string_lossy().to_string(),
-    };
-    command.arg(&workdir);
+    command.arg(args.workdir.clone().unwrap());
 
     command.arg("--uid");
     command.arg(&t_user.user.name);
@@ -160,11 +155,9 @@ pub fn sud_exec(
         let cmd = args
             .command
             .ok_or(sud::SudError::NotFound("Command not found in args".into()))?;
-        let exe = find_executable(&cmd, &process_path, &workdir)
-            .ok_or(sud::SudError::NotFound("Command not found in PATH".into()))?;
 
         command.arg("--");
-        command.arg(exe);
+        command.arg(cmd);
         command.args(args.args);
     }
 
