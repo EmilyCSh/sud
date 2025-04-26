@@ -5,14 +5,13 @@
  *  Copyright (C) Emily <info@emy.sh>
  */
 
+use crate::SUD_CONFIG_PATH;
 use crate::auth::UserInfo;
 use crate::sud;
 use regex::Regex;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-
-const SUD_C_CONF_PATH: &str = "/etc/sud.conf";
 
 #[repr(u32)]
 #[derive(Debug, Default, PartialEq)]
@@ -34,7 +33,7 @@ impl SudGlobalConfig {
     pub fn load() -> Result<Self, sud::SudError> {
         let mut conf: SudGlobalConfig = SudGlobalConfig::default();
 
-        let path = Path::new(SUD_C_CONF_PATH);
+        let path = Path::new(SUD_CONFIG_PATH.as_str());
         let file = File::open(&path)?;
         let reader = BufReader::new(file);
 
@@ -118,7 +117,7 @@ pub struct SudPolicy {
 
 impl SudPolicy {
     pub fn load() -> Result<Vec<SudPolicy>, sud::SudError> {
-        let path = Path::new(SUD_C_CONF_PATH);
+        let path = Path::new(SUD_CONFIG_PATH.as_str());
         let file = File::open(&path)?;
         let reader = BufReader::new(file);
         let regex =

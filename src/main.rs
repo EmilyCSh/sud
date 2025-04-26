@@ -21,8 +21,16 @@ use crate::client::main_client;
 use crate::server::main_server;
 use clap::Parser;
 use nix::unistd;
+use once_cell::sync::Lazy;
 use std::env;
 use std::process::ExitCode;
+
+static SUD_CONFIG_PATH: Lazy<String> = Lazy::new(|| {
+    env::var("SUD_CONFIG_PATH").unwrap_or_else(|_| {
+        eprintln!("Error: SUD_CONFIG_PATH environment variable not found!");
+        std::process::exit(1);
+    })
+});
 
 fn main() -> ExitCode {
     let args = SudCmdlineArgs::parse_from(env::args());
