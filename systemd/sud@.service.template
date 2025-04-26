@@ -11,6 +11,7 @@ PartOf=sud.socket
 [Service]
 Type=exec
 ExecStart=${SUD_BIN} --daemon
+Environment=SUD_CONFIG_PATH=/etc/sud.conf
 StandardOutput=journal
 StandardError=journal
 ProtectSystem=strict
