@@ -39,29 +39,26 @@ pub fn main_client() -> SudResponseMsg {
     let mut msg: SudResponseMsg = SudResponseMsg::default();
     msg.error = SudMsgError::ClientError;
 
-    let tty = match File::open("/dev/tty") {
-        Ok(file) => file,
-        Err(e) => {
-            eprintln!("Error opening /dev/tty: {}", e);
-            return msg;
-        }
+    let tty_fd = match File::open("/dev/tty") {
+        Ok(tty) => Some(tty.as_raw_fd()),
+        Err(_) => None,
     };
 
-    let tty_fd = tty.as_raw_fd();
-
-    let term_attrs = match Termios::from_fd(tty_fd) {
-        Ok(term) => term,
-        Err(e) => {
-            eprintln!("Error get terminal attributes: {}", e);
-            return msg;
-        }
+    let term_attrs = match tty_fd {
+        Some(tty_fd) => match Termios::from_fd(tty_fd) {
+            Ok(term) => Some(term),
+            Err(_) => None,
+        },
+        None => None,
     };
 
-    ctrlc::set_handler(move || {
-        let _ = tcsetattr(tty_fd, TCSANOW, &term_attrs);
-        std::process::exit(0);
-    })
-    .expect("Error setting Ctrl-C handler");
+    if let (Some(tty_fd), Some(term_attrs)) = (tty_fd, term_attrs) {
+        ctrlc::set_handler(move || {
+            let _ = tcsetattr(tty_fd, TCSANOW, &term_attrs);
+            std::process::exit(0);
+        })
+        .expect("Error setting Ctrl-C handler")
+    }
 
     match unix_socket_connect(SUD_SOCKET_PATH, 1) {
         Ok(mut stream) => {
@@ -83,7 +80,9 @@ pub fn main_client() -> SudResponseMsg {
     }
 
     if msg.error != SudMsgError::Success {
-        let _ = tcsetattr(tty_fd, TCSANOW, &term_attrs);
+        if let (Some(tty_fd), Some(term_attrs)) = (tty_fd, term_attrs) {
+            let _ = tcsetattr(tty_fd, TCSANOW, &term_attrs);
+        }
 
         if msg.error == SudMsgError::Generic {
             eprintln!("sud: generic error in sud daemon");
