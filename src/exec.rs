@@ -149,17 +149,13 @@ pub fn sud_exec(
         command.arg("-pProtectKernelLogs=true");
     }
 
-    if args.shell {
-        command.arg(shell);
-    } else {
-        let cmd = args
-            .command
-            .ok_or(sud::SudError::NotFound("Command not found in args".into()))?;
+    let cmd = args
+        .command
+        .ok_or(sud::SudError::NotFound("Command not found in args".into()))?;
 
-        command.arg("--");
-        command.arg(cmd);
-        command.args(args.args);
-    }
+    command.arg("--");
+    command.arg(cmd);
+    command.args(args.args);
 
     command.stdin(pinfo.stdin.try_clone().unwrap());
     command.stdout(pinfo.stdout.try_clone().unwrap());

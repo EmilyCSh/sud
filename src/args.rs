@@ -114,6 +114,13 @@ impl SudCmdlineArgs {
             None => Some(pinfo.cwd.to_string_lossy().to_string()),
         };
 
+        if args.shell {
+            args.command = match pinfo.get_env("SHELL") {
+                Some(env) => Some(env),
+                None => Some(args.get_user()?.user.shell),
+            };
+        }
+
         if args.command.is_some() {
             let process_path = pinfo.get_env("PATH").ok_or(sud::SudError::NotFound(
                 "Missing env PATH in caller process".into(),
