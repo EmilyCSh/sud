@@ -51,10 +51,17 @@ pub fn sud_exec(
     command.arg("--uid");
     command.arg(&t_user.user.name);
 
-    command.arg("--background");
     match args.color {
-        Some(ref color) => command.arg(color),
-        None => command.arg(global_conf.background_color),
+        Some(ref color) => {
+            command.arg("--background");
+            command.arg(color);
+        }
+        None => {
+            if global_conf.background_color_enable {
+                command.arg("--background");
+                command.arg(global_conf.background_color);
+            }
+        }
     };
 
     command.arg("-E");
