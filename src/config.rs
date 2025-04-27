@@ -24,6 +24,7 @@ pub enum ConfigAuthMode {
 #[derive(Debug, Default)]
 pub struct SudGlobalConfig {
     pub auth_mode: ConfigAuthMode,
+    pub background_color_enable: bool,
     pub background_color: String,
     pub password_echo_enable: bool,
     pub password_echo: String,
@@ -61,6 +62,17 @@ impl SudGlobalConfig {
                 "auth_mode" => match value.as_str() {
                     "shadow" => conf.auth_mode = ConfigAuthMode::Shadow,
                     "pam" => conf.auth_mode = ConfigAuthMode::Pam,
+                    _ => {
+                        return Err(sud::SudError::InvalidConfig(format!(
+                            "Unsupported value \"{}\" for option \"{}\"",
+                            value, subkey
+                        )));
+                    }
+                },
+
+                "background_color_enable" => match value.as_str() {
+                    "true" => conf.background_color_enable = true,
+                    "false" => conf.background_color_enable = false,
                     _ => {
                         return Err(sud::SudError::InvalidConfig(format!(
                             "Unsupported value \"{}\" for option \"{}\"",
