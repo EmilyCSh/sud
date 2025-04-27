@@ -14,9 +14,14 @@ use nix::unistd::isatty;
 use std::env;
 use std::fs;
 use std::fs::{File, OpenOptions};
+use std::io::{self, ErrorKind};
 use std::os::fd::{AsRawFd, BorrowedFd};
+use std::os::linux::net::SocketAddrExt;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::net::{SocketAddr, UnixStream};
 use std::path::{Path, PathBuf};
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 
 #[derive(Debug)]
 pub struct ProcessInfo {
@@ -173,4 +178,24 @@ pub fn find_executable(relative_path: &str, path_env: &str, workdir: &str) -> Op
 
     env::set_current_dir(prev_workdir).unwrap_or_else(|_| ());
     None
+}
+
+pub fn unix_socket_connect(socket_path: &str, timeout: usize) -> io::Result<UnixStream> {
+    let addr = SocketAddr::from_abstract_name(socket_path)?;
+
+    let start_time = Instant::now();
+    loop {
+        match UnixStream::connect_addr(&addr) {
+            Ok(stream) => return Ok(stream),
+            Err(ref e)
+                if e.kind() == ErrorKind::NotFound || e.kind() == ErrorKind::ConnectionRefused => {}
+            Err(e) => return Err(e),
+        }
+
+        if start_time.elapsed() > Duration::from_secs(timeout as u64) {
+            return Err(io::Error::new(ErrorKind::TimedOut, "Connection timeout"));
+        }
+
+        sleep(Duration::from_secs(1));
+    }
 }

@@ -6,34 +6,11 @@
  */
 
 use crate::sud::{SUD_SOCKET_PATH, SudMsgError, SudResponseMsg};
+use crate::utils::unix_socket_connect;
 use std::fs::File;
-use std::io::{self, ErrorKind, Read};
+use std::io::Read;
 use std::os::fd::AsRawFd;
-use std::os::linux::net::SocketAddrExt;
-use std::os::unix::net::{SocketAddr, UnixStream};
-use std::thread::sleep;
-use std::time::{Duration, Instant};
 use termios::{TCSANOW, Termios, tcsetattr};
-
-fn unix_socket_connect(socket_path: &str, timeout: usize) -> io::Result<UnixStream> {
-    let addr = SocketAddr::from_abstract_name(socket_path)?;
-
-    let start_time = Instant::now();
-    loop {
-        match UnixStream::connect_addr(&addr) {
-            Ok(stream) => return Ok(stream),
-            Err(ref e)
-                if e.kind() == ErrorKind::NotFound || e.kind() == ErrorKind::ConnectionRefused => {}
-            Err(e) => return Err(e),
-        }
-
-        if start_time.elapsed() > Duration::from_secs(timeout as u64) {
-            return Err(io::Error::new(ErrorKind::TimedOut, "Connection timeout"));
-        }
-
-        sleep(Duration::from_secs(1));
-    }
-}
 
 pub fn main_client() -> SudResponseMsg {
     let mut msg: SudResponseMsg = SudResponseMsg::default();
