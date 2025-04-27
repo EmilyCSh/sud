@@ -24,9 +24,9 @@ fn check_if_tty(pinfo: &ProcessInfo) -> Result<bool, sud::SudError> {
 
 pub fn sud_exec(
     pinfo: &ProcessInfo,
-    o_user: UserInfo,
-    t_user: UserInfo,
-    args: SudCmdlineArgs,
+    o_user: &UserInfo,
+    t_user: &UserInfo,
+    args: &SudCmdlineArgs,
     global_conf: SudGlobalConfig,
 ) -> Result<Child, sud::SudError> {
     let mut command = Command::new("/usr/bin/systemd-run");
@@ -91,7 +91,7 @@ pub fn sud_exec(
 
     let shell = match pinfo.get_env("SHELL") {
         Some(env) => env,
-        None => t_user.user.shell,
+        None => t_user.user.shell.clone(),
     };
 
     command.arg("-E");
@@ -151,11 +151,12 @@ pub fn sud_exec(
 
     let cmd = args
         .command
+        .clone()
         .ok_or(sud::SudError::NotFound("Command not found in args".into()))?;
 
     command.arg("--");
-    command.arg(cmd);
-    command.args(args.args);
+    command.arg(cmd.clone());
+    command.args(args.args.clone());
 
     command.stdin(pinfo.stdin.try_clone().unwrap());
     command.stdout(pinfo.stdout.try_clone().unwrap());

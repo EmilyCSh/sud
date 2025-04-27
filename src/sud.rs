@@ -149,8 +149,17 @@ pub fn sud_handle(conn_fd: BorrowedFd) -> Result<Child, SudError> {
     let target_userinfo = args.get_user()?;
 
     println!(
-        "Authentication for user {} from process {} started",
-        pinfo.uid, pinfo.pid
+        "Authentication for user {} ({}) as target user {} ({}) from process {} trying to execute {} {} started",
+        original_userinfo.user.name,
+        original_userinfo.user.uid,
+        target_userinfo.user.name,
+        target_userinfo.user.uid,
+        pinfo.pid,
+        args.command.as_ref().unwrap(),
+        args.args
+            .is_empty()
+            .then(|| String::new())
+            .unwrap_or_else(|| args.args.join(" ")),
     );
 
     if !sud_auth(
@@ -173,15 +182,25 @@ pub fn sud_handle(conn_fd: BorrowedFd) -> Result<Child, SudError> {
 
     let child = sud_exec(
         &pinfo,
-        original_userinfo,
-        target_userinfo,
-        args,
+        &original_userinfo,
+        &target_userinfo,
+        &args,
         global_config,
     )?;
+
     println!(
-        "Executed process {} authenticated as user {}",
+        "Executed process {} ({} {}) as user {} ({}) authenticated as user {} ({})",
         child.id(),
-        pinfo.uid
+        args.command.unwrap(),
+        args.args
+            .is_empty()
+            .then(|| String::new())
+            .unwrap_or_else(|| args.args.join(" ")),
+        target_userinfo.user.name,
+        target_userinfo.user.uid,
+        original_userinfo.user.name,
+        original_userinfo.user.uid,
     );
+
     Ok(child)
 }
