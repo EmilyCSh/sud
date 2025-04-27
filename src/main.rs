@@ -46,10 +46,14 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
 
-        if main_server().error == sud::SudMsgError::Success {
-            return ExitCode::from(0);
-        } else {
-            return ExitCode::from(1);
+        match main_server() {
+            Ok(()) => {
+                return ExitCode::from(0);
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+                return ExitCode::from(1);
+            }
         }
     } else {
         let msg = main_client();
