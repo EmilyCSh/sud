@@ -84,11 +84,11 @@ fn get_conn_fd<'a>() -> Result<BorrowedFd<'a>, sud::SudError> {
     ))
 }
 
-pub fn main_server() -> SudResponseMsg {
+pub fn main_server() -> Result<(), sud::SudError> {
     let mut response = SudResponseMsg::default();
     response.error = SudMsgError::Generic;
 
-    fn send_return(conn_fd: BorrowedFd, msg: SudResponseMsg) -> SudResponseMsg {
+    fn send(conn_fd: BorrowedFd, msg: SudResponseMsg) -> SudResponseMsg {
         let _ = socket::send(
             conn_fd.as_raw_fd(),
             msg.as_bytes(),
@@ -97,25 +97,19 @@ pub fn main_server() -> SudResponseMsg {
         msg
     }
 
-    let conn_fd = match get_conn_fd() {
-        Ok(conn_fd) => conn_fd,
-        Err(e) => {
-            eprintln!("{}", e);
-            return response;
-        }
-    };
+    let conn_fd = get_conn_fd()?;
 
     // Handle the connection
     let mut child = match sud_handle(conn_fd) {
         Ok(child) => child,
         Err(sud::SudError::AuthFail(e)) => {
-            eprintln!("{}", e);
             response.error = SudMsgError::Auth;
-            return send_return(conn_fd, response);
+            send(conn_fd, response);
+            return Err(sud::SudError::AuthFail(e));
         }
         Err(e) => {
-            eprintln!("{}", e);
-            return send_return(conn_fd, response);
+            send(conn_fd, response);
+            return Err(e);
         }
     };
 
@@ -126,16 +120,16 @@ pub fn main_server() -> SudResponseMsg {
     let exit_status = match child.wait() {
         Ok(exit_status) => exit_status,
         Err(e) => {
-            eprintln!("Fail wait pid: {}", e);
-            return send_return(conn_fd, response);
+            send(conn_fd, response);
+            return Err(sud::SudError::IoError(e));
         }
     };
 
     response.exit_code = match exit_status.code() {
         Some(code) => code,
         None => {
-            eprintln!("Error with waitpid");
-            return send_return(conn_fd, response);
+            send(conn_fd, response);
+            return Err(sud::SudError::NotFound("Error with waitpid".into()));
         }
     };
 
@@ -146,5 +140,6 @@ pub fn main_server() -> SudResponseMsg {
         response.exit_code
     );
 
-    send_return(conn_fd, response)
+    send(conn_fd, response);
+    Ok(())
 }
