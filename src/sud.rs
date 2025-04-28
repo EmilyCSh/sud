@@ -14,6 +14,7 @@ use crate::utils::ProcessInfo;
 use clap;
 use libsystemd;
 use nix;
+use nix::unistd;
 use std::fmt;
 use std::io;
 use std::mem;
@@ -22,6 +23,7 @@ use std::os::fd::BorrowedFd;
 use std::process::Child;
 
 pub const SUD_SOCKET_PATH: &str = "sud_privilege_manager_socket";
+pub const SUD_SOCKET_PERSIST_PATH: &str = "sud_privilege_manager_persist_socket";
 pub const SUD_MAGIC: &str = "____sud_privilege_manager____";
 
 #[derive(Debug)]
@@ -128,6 +130,52 @@ impl SudResponseMsg {
         }
 
         let msg = unsafe { std::ptr::read(bytes.as_ptr() as *const SudResponseMsg) };
+
+        if msg.magic != SUD_MAGIC.as_bytes() {
+            return None;
+        }
+
+        Some(msg)
+    }
+}
+
+#[repr(u32)]
+#[derive(PartialEq, Clone, Debug)]
+pub enum SudAuthPersistMsgAction {
+    Check = 0x00,
+    Add = 0x01,
+    Remove = 0x02,
+    RemoveAll = 0x03,
+}
+
+#[repr(C)]
+pub struct SudAuthPersistMsg {
+    pub magic: [u8; SUD_MAGIC.len()],
+    pub action: SudAuthPersistMsgAction,
+    pub uid: unistd::Uid,
+}
+
+impl Default for SudAuthPersistMsg {
+    fn default() -> Self {
+        Self {
+            magic: SUD_MAGIC.as_bytes().try_into().unwrap(),
+            action: SudAuthPersistMsgAction::Check,
+            uid: 0.into(),
+        }
+    }
+}
+
+impl SudAuthPersistMsg {
+    pub fn as_bytes(&self) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self as *const _ as *const u8, mem::size_of::<Self>()) }
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < mem::size_of::<Self>() {
+            return None;
+        }
+
+        let msg = unsafe { std::ptr::read(bytes.as_ptr() as *const SudAuthPersistMsg) };
 
         if msg.magic != SUD_MAGIC.as_bytes() {
             return None;

@@ -8,9 +8,16 @@
 
 use crate::args::SudCmdlineArgs;
 use crate::c_ffi;
-use crate::config::{ConfigAuthMode, SudGlobalConfig, SudPolicy, policy_is_permit};
+use crate::config::{ConfigAuthMode, SudGlobalConfig, SudPolicy, policy_get_match};
 use crate::sud;
+use crate::sud::SUD_MAGIC;
+use crate::sud::SUD_SOCKET_PERSIST_PATH;
+use crate::sud::SudAuthPersistMsg;
+use crate::sud::SudAuthPersistMsgAction;
+use crate::sud::SudMsgError;
+use crate::sud::SudResponseMsg;
 use crate::utils::ProcessInfo;
+use crate::utils::unix_socket_connect;
 use nix::fcntl;
 use nix::unistd;
 use passwd_rs::AccountStatus;
@@ -19,6 +26,7 @@ use passwd_rs::shadow::Shadow;
 use passwd_rs::user::User;
 use secure_string::SecureVec;
 use std::ffi::CString;
+use std::io::Read;
 use std::io::Write;
 use std::os::fd::AsRawFd;
 use std::os::raw::c_int;
@@ -149,18 +157,65 @@ pub fn sud_auth(
         .ok_or(sud::SudError::NotFound("Missing command in args".into()))?;
 
     let policies = SudPolicy::load()?;
+    let policy = policy_get_match(&policies, o_user, t_user, cmd)
+        .ok_or(sud::SudError::NotFound("Missing sud policy".into()))?;
 
-    if !policy_is_permit(&policies, o_user, t_user, cmd) {
+    if !policy.permit {
         return Ok(false);
     }
 
-    if global_conf.auth_mode == ConfigAuthMode::Shadow {
-        return Ok(auth_shadow(pinfo, &o_user, &args, &global_conf)?);
-    } else if global_conf.auth_mode == ConfigAuthMode::Pam {
-        return Ok(auth_pam(pinfo, &o_user, &args, &global_conf));
+    if auth_persist(o_user)? {
+        return Ok(true);
     }
 
-    Ok(false)
+    let is_auth = if global_conf.auth_mode == ConfigAuthMode::Shadow {
+        auth_shadow(pinfo, &o_user, &args, &global_conf)?
+    } else if global_conf.auth_mode == ConfigAuthMode::Pam {
+        auth_pam(pinfo, &o_user, &args, &global_conf)
+    } else {
+        false
+    };
+
+    if is_auth && policy.persist {
+        add_auth_persist(&o_user)?;
+    }
+
+    Ok(is_auth)
+}
+
+fn auth_persist(o_user: &UserInfo) -> Result<bool, sud::SudError> {
+    let mut stream = unix_socket_connect(SUD_SOCKET_PERSIST_PATH, 0)?;
+
+    let msg = SudAuthPersistMsg {
+        magic: SUD_MAGIC.as_bytes().try_into().unwrap(),
+        action: SudAuthPersistMsgAction::Check,
+        uid: o_user.user.uid.into(),
+    };
+
+    stream.write_all(msg.as_bytes())?;
+
+    let mut buf = [0u8; std::mem::size_of::<SudResponseMsg>()];
+
+    stream.read_exact(&mut buf)?;
+
+    if let Some(response) = SudResponseMsg::from_bytes(&buf) {
+        return Ok(response.error == SudMsgError::Success);
+    }
+
+    return Ok(false);
+}
+
+fn add_auth_persist(o_user: &UserInfo) -> Result<(), sud::SudError> {
+    let mut stream = unix_socket_connect(SUD_SOCKET_PERSIST_PATH, 0)?;
+
+    let msg = SudAuthPersistMsg {
+        magic: SUD_MAGIC.as_bytes().try_into().unwrap(),
+        action: SudAuthPersistMsgAction::Add,
+        uid: o_user.user.uid.into(),
+    };
+
+    stream.write_all(msg.as_bytes())?;
+    Ok(())
 }
 
 fn auth_shadow(

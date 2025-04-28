@@ -61,6 +61,14 @@ pub struct SudCmdlineArgs {
 
     #[arg(
         long,
+        default_value = "false",
+        exclusive = true,
+        help = "Start SUD as persist auth server (must be root)"
+    )]
+    pub daemon_persist: bool,
+
+    #[arg(
+        long,
         short,
         default_value = "false",
         conflicts_with = "command",
@@ -97,6 +105,22 @@ pub struct SudCmdlineArgs {
 
     #[arg(long, num_args=1.., help="Apply sandboxing policies to the process")]
     isolate: Vec<String>,
+
+    #[arg(
+        long,
+        default_value = "false",
+        exclusive = true,
+        help = "Clear persistent authentications of the current user"
+    )]
+    pub clear_persist: bool,
+
+    #[arg(
+        long,
+        default_value = "false",
+        exclusive = true,
+        help = "Clear persistent authentications for all users (must be root)"
+    )]
+    pub clear_persist_all: bool,
 
     #[arg(num_args=1, trailing_var_arg=true, allow_hyphen_values=true, required_unless_present_any(["daemon", "shell"]))]
     pub command: Option<String>,

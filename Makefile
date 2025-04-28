@@ -38,8 +38,12 @@ test: target/release/$(TARGET)
 	install -Dm 644 systemd/sud.socket /run/systemd/transient/sud.socket
 	install -Dm 644 /dev/null /run/systemd/transient/sud@.service
 	cat systemd/sud@.service.template | SUD_BIN=/tmp/sud envsubst > /run/systemd/transient/sud@.service
+	install -Dm 644 systemd/sud-persist.socket /run/systemd/transient/sud-persist.socket
+	install -Dm 644 /dev/null /run/systemd/transient/sud-persist.service
+	cat systemd/sud-persist.service.template | SUD_BIN=/tmp/sud envsubst > /run/systemd/transient/sud-persist.service
 	systemctl daemon-reload
 	systemctl start sud.socket
+	systemctl start sud-persist.socket
 
 .PHONY: clean
 clean:

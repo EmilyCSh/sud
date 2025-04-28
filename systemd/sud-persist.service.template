@@ -1,18 +1,18 @@
 # SPDX-License-Identifier: GPL-3.0-only
 #
-# systemd/sud@.service.template
+# systemd/sud-persist.service.template
 #
 # Copyright (C) Emily <info@emy.sh>
 
 [Unit]
-Description=Super User Daemon - privilege manager for systemd/Linux
-PartOf=sud.socket
-Requires=sud-persist.socket
+Description=Super User Daemon (Persist auth server) - privilege manager for systemd/Linux
+PartOf=sud-persist.socket
 
 [Service]
 Type=exec
-ExecStart=${SUD_BIN} --daemon
+ExecStart=${SUD_BIN} --daemon-persist
 Environment=SUD_CONFIG_PATH=/etc/sud.conf
+StandardInput=socket
 StandardOutput=journal
 StandardError=journal
 ProtectSystem=strict
