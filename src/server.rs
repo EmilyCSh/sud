@@ -5,6 +5,7 @@
  *  Copyright (C) Emily <info@emy.sh>
  */
 
+use crate::auth::SudAuthPersist;
 use crate::config::SudGlobalConfig;
 use crate::sud::{self, SudMsgError, SudResponseMsg, sud_handle};
 use nix::errno::Errno;
@@ -18,6 +19,7 @@ use std::os::fd::FromRawFd;
 use std::os::unix::net::UnixListener;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
@@ -59,7 +61,11 @@ fn check_conn_closed(conn_fd: BorrowedFd) -> Result<bool, Errno> {
     Ok(true)
 }
 
-fn handle_conn(stream: UnixStream, global_config: Arc<SudGlobalConfig>) {
+fn handle_conn(
+    stream: UnixStream,
+    global_config: Arc<SudGlobalConfig>,
+    auth_persists: Arc<Mutex<Vec<SudAuthPersist>>>,
+) {
     let conn_fd = stream.as_fd();
     let mut response = SudResponseMsg::default();
     response.error = SudMsgError::Generic;
@@ -74,7 +80,7 @@ fn handle_conn(stream: UnixStream, global_config: Arc<SudGlobalConfig>) {
     }
 
     // Handle the connection
-    let mut child = match sud_handle(conn_fd, &*global_config) {
+    let mut child = match sud_handle(conn_fd, &*global_config, auth_persists) {
         Ok(child) => child,
         Err(sud::SudError::AuthFail(e)) => {
             response.error = SudMsgError::Auth;
@@ -144,14 +150,16 @@ fn handle_conn(stream: UnixStream, global_config: Arc<SudGlobalConfig>) {
 pub fn main_server() -> Result<(), sud::SudError> {
     let listener = unsafe { UnixListener::from_raw_fd(0) };
     let global_config = Arc::new(SudGlobalConfig::load()?);
+    let auth_persists: Arc<Mutex<Vec<SudAuthPersist>>> = Arc::new(Mutex::new(Vec::new()));
 
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
                 let global_config = Arc::clone(&global_config);
+                let auth_persists = Arc::clone(&auth_persists);
 
                 thread::spawn(move || {
-                    handle_conn(stream, global_config);
+                    handle_conn(stream, global_config, auth_persists);
                 });
             }
             Err(e) => {

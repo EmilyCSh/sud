@@ -8,11 +8,12 @@
 
 use crate::args::SudCmdlineArgs;
 use crate::c_ffi;
-use crate::config::{ConfigAuthMode, SudGlobalConfig, SudPolicy, policy_is_permit};
+use crate::config::{ConfigAuthMode, SudGlobalConfig, SudPolicy, policy_get_match};
 use crate::sud;
 use crate::utils::ProcessInfo;
 use nix::fcntl;
 use nix::unistd;
+use nix::unistd::Uid;
 use passwd_rs::AccountStatus;
 use passwd_rs::group::Group;
 use passwd_rs::shadow::Shadow;
@@ -22,6 +23,8 @@ use std::ffi::CString;
 use std::io::Write;
 use std::os::fd::AsRawFd;
 use std::os::raw::c_int;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use termios::{ECHO, ICANON, TCSANOW, Termios};
@@ -124,12 +127,18 @@ impl UserInfo {
     }
 }
 
+pub struct SudAuthPersist {
+    uid: Uid,
+    valid_time: u64,
+}
+
 pub fn sud_auth(
     pinfo: &mut ProcessInfo,
     o_user: &UserInfo,
     t_user: &UserInfo,
     args: &SudCmdlineArgs,
     global_conf: &SudGlobalConfig,
+    auth_persists: Arc<Mutex<Vec<SudAuthPersist>>>,
 ) -> Result<bool, sud::SudError> {
     if !o_user.is_user_valid() || !t_user.is_user_valid() {
         return Ok(false);
@@ -149,18 +158,64 @@ pub fn sud_auth(
         .ok_or(sud::SudError::NotFound("Missing command in args".into()))?;
 
     let policies = SudPolicy::load()?;
+    let policy = policy_get_match(&policies, o_user, t_user, cmd)
+        .ok_or(sud::SudError::NotFound("Missing sud policy".into()))?;
 
-    if !policy_is_permit(&policies, o_user, t_user, cmd) {
+    if !policy.permit {
         return Ok(false);
     }
 
-    if global_conf.auth_mode == ConfigAuthMode::Shadow {
-        return Ok(auth_shadow(pinfo, &o_user, &args, &global_conf)?);
-    } else if global_conf.auth_mode == ConfigAuthMode::Pam {
-        return Ok(auth_pam(pinfo, &o_user, &args, &global_conf));
+    let mut auth_persists = auth_persists.lock().unwrap();
+
+    if check_persist(&auth_persists, o_user) {
+        return Ok(true);
     }
 
-    Ok(false)
+    let is_auth = if global_conf.auth_mode == ConfigAuthMode::Shadow {
+        auth_shadow(pinfo, &o_user, &args, &global_conf)?
+    } else if global_conf.auth_mode == ConfigAuthMode::Pam {
+        auth_pam(pinfo, &o_user, &args, &global_conf)
+    } else {
+        false
+    };
+
+    if is_auth && policy.persist {
+        add_persist(&mut auth_persists, global_conf, o_user);
+    }
+
+    Ok(is_auth)
+}
+
+fn add_persist(
+    auth_persists: &mut Vec<SudAuthPersist>,
+    global_conf: &SudGlobalConfig,
+    o_user: &UserInfo,
+) {
+    let current_time = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    auth_persists.retain(|auth_persist| auth_persist.uid != o_user.user.uid.into());
+    auth_persists.push(SudAuthPersist {
+        uid: o_user.user.uid.into(),
+        valid_time: current_time + global_conf.persist_timeout,
+    });
+}
+
+fn check_persist(auth_persists: &Vec<SudAuthPersist>, o_user: &UserInfo) -> bool {
+    let current_time = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    for auth_persist in &*auth_persists {
+        if auth_persist.uid == o_user.user.uid.into() && current_time < auth_persist.valid_time {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 fn auth_shadow(

@@ -7,6 +7,7 @@
  */
 
 use crate::args::SudCmdlineArgs;
+use crate::auth::SudAuthPersist;
 use crate::auth::{UserInfo, sud_auth};
 use crate::config::SudGlobalConfig;
 use crate::exec::sud_exec;
@@ -19,6 +20,8 @@ use std::mem;
 use std::num;
 use std::os::fd::BorrowedFd;
 use std::process::Child;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 pub const SUD_SOCKET_PATH: &str = "sud_privilege_manager_socket";
 pub const SUD_MAGIC: &str = "____sud_privilege_manager____";
@@ -128,7 +131,11 @@ impl SudResponseMsg {
     }
 }
 
-pub fn sud_handle(conn_fd: BorrowedFd, global_config: &SudGlobalConfig) -> Result<Child, SudError> {
+pub fn sud_handle(
+    conn_fd: BorrowedFd,
+    global_config: &SudGlobalConfig,
+    auth_persists: Arc<Mutex<Vec<SudAuthPersist>>>,
+) -> Result<Child, SudError> {
     let mut pinfo = ProcessInfo::from_conn(conn_fd)?;
 
     let original_userinfo = UserInfo::from_uid(pinfo.uid)?;
@@ -157,6 +164,7 @@ pub fn sud_handle(conn_fd: BorrowedFd, global_config: &SudGlobalConfig) -> Resul
         &target_userinfo,
         &args,
         &global_config,
+        auth_persists,
     )? {
         return Err(SudError::AuthFail(format!(
             "Authentication for user {} from process {} failed",
