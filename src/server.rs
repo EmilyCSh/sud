@@ -81,7 +81,15 @@ fn handle_conn(
 
     // Handle the connection
     let mut child = match sud_handle(conn_fd, &*global_config, auth_persists) {
-        Ok(child) => child,
+        Ok(child) => match child {
+            Some(child) => child,
+            None => {
+                response.exit_code = 0;
+                response.error = SudMsgError::Success;
+                send(conn_fd, response);
+                return;
+            }
+        },
         Err(sud::SudError::AuthFail(e)) => {
             response.error = SudMsgError::Auth;
             send(conn_fd, response);
