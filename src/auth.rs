@@ -165,9 +165,7 @@ pub fn sud_auth(
         return Ok(false);
     }
 
-    let mut auth_persists = auth_persists.lock().unwrap();
-
-    if check_persist(&auth_persists, o_user) {
+    if check_persist(auth_persists.clone(), o_user) {
         return Ok(true);
     }
 
@@ -180,17 +178,18 @@ pub fn sud_auth(
     };
 
     if is_auth && policy.persist {
-        add_persist(&mut auth_persists, global_conf, o_user);
+        add_persist(auth_persists.clone(), global_conf, o_user);
     }
 
     Ok(is_auth)
 }
 
 fn add_persist(
-    auth_persists: &mut Vec<SudAuthPersist>,
+    auth_persists: Arc<Mutex<Vec<SudAuthPersist>>>,
     global_conf: &SudGlobalConfig,
     o_user: &UserInfo,
 ) {
+    let mut auth_persists = auth_persists.lock().unwrap();
     let current_time = std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
         .unwrap()
@@ -203,7 +202,8 @@ fn add_persist(
     });
 }
 
-fn check_persist(auth_persists: &Vec<SudAuthPersist>, o_user: &UserInfo) -> bool {
+fn check_persist(auth_persists: Arc<Mutex<Vec<SudAuthPersist>>>, o_user: &UserInfo) -> bool {
+    let auth_persists = auth_persists.lock().unwrap();
     let current_time = std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
         .unwrap()
@@ -216,6 +216,16 @@ fn check_persist(auth_persists: &Vec<SudAuthPersist>, o_user: &UserInfo) -> bool
     }
 
     return false;
+}
+
+pub fn clear_persist(auth_persists: Arc<Mutex<Vec<SudAuthPersist>>>, o_user: &UserInfo) {
+    let mut auth_persists = auth_persists.lock().unwrap();
+    auth_persists.retain(|auth_persist| auth_persist.uid != o_user.user.uid.into());
+}
+
+pub fn clear_persist_all(auth_persists: Arc<Mutex<Vec<SudAuthPersist>>>) {
+    let mut auth_persists = auth_persists.lock().unwrap();
+    auth_persists.clear();
 }
 
 fn auth_shadow(

@@ -9,6 +9,7 @@
 use crate::args::SudCmdlineArgs;
 use crate::auth::SudAuthPersist;
 use crate::auth::{UserInfo, sud_auth};
+use crate::auth::{clear_persist, clear_persist_all};
 use crate::config::SudGlobalConfig;
 use crate::exec::sud_exec;
 use crate::utils::ProcessInfo;
@@ -135,7 +136,7 @@ pub fn sud_handle(
     conn_fd: BorrowedFd,
     global_config: &SudGlobalConfig,
     auth_persists: Arc<Mutex<Vec<SudAuthPersist>>>,
-) -> Result<Child, SudError> {
+) -> Result<Option<Child>, SudError> {
     let mut pinfo = ProcessInfo::from_conn(conn_fd)?;
 
     let original_userinfo = UserInfo::from_uid(pinfo.uid)?;
@@ -143,6 +144,20 @@ pub fn sud_handle(
     let args = SudCmdlineArgs::parse(&pinfo)?;
 
     let target_userinfo = args.get_user()?;
+
+    if args.clear_persist {
+        clear_persist(auth_persists.clone(), &original_userinfo);
+        return Ok(None);
+    }
+
+    if args.clear_persist_all {
+        if original_userinfo.user.uid == 0 {
+            clear_persist_all(auth_persists.clone());
+        } else {
+            clear_persist(auth_persists.clone(), &original_userinfo);
+        }
+        return Ok(None);
+    }
 
     println!(
         "Authentication for user {} ({}) as target user {} ({}) from process {} trying to execute {} {} started",
@@ -199,5 +214,5 @@ pub fn sud_handle(
         original_userinfo.user.uid,
     );
 
-    Ok(child)
+    Ok(Some(child))
 }
