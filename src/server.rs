@@ -16,43 +16,44 @@ use std::os::fd::AsRawFd;
 use std::os::fd::BorrowedFd;
 use std::os::fd::IntoRawFd;
 use std::thread;
+use std::time::Duration;
 
-fn conn_guard_thread(conn_fd: BorrowedFd, exec_pid: i32) {
+fn kill_pid(pid: i32) {
+    println!("SIGTERM sent to process {}", pid);
+    let _ = kill(Pid::from_raw(pid), Signal::SIGTERM);
+
+    thread::sleep(Duration::new(10, 0));
+
+    match kill(Pid::from_raw(pid), None) {
+        Err(Errno::ESRCH) => {}
+        _ => {
+            println!(
+                "Process {} does not respond to SIGTERM, sending SIGKILL",
+                pid
+            );
+            let _ = kill(Pid::from_raw(pid), Signal::SIGKILL);
+        }
+    }
+}
+
+fn check_conn_closed(conn_fd: BorrowedFd) -> Result<bool, Errno> {
     use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
-    use std::time::Duration;
 
     let pollfd = PollFd::new(
         conn_fd.as_fd(),
         PollFlags::POLLHUP | PollFlags::POLLERR | PollFlags::POLLNVAL,
     );
 
-    loop {
-        match poll(&mut [pollfd], PollTimeout::NONE) {
-            Err(Errno::EINTR) => continue,
-            _ => {
-                println!(
-                    "Connection closed by client, SIGTERM sent to exec process {}",
-                    exec_pid
-                );
-                let _ = kill(Pid::from_raw(exec_pid), Signal::SIGTERM);
+    let nfds = match poll(&mut [pollfd], PollTimeout::ZERO) {
+        Err(Errno::EINTR) => return Ok(false),
+        nfds => nfds?,
+    };
 
-                thread::sleep(Duration::new(10, 0));
-
-                match kill(Pid::from_raw(exec_pid), None) {
-                    Err(Errno::ESRCH) => {}
-                    _ => {
-                        println!(
-                            "Process {} does not respond to SIGTERM, sending SIGKILL",
-                            exec_pid
-                        );
-                        let _ = kill(Pid::from_raw(exec_pid), Signal::SIGKILL);
-                    }
-                }
-
-                std::process::exit(0);
-            }
-        }
+    if nfds <= 0 {
+        return Ok(false);
     }
+
+    Ok(true)
 }
 
 fn get_conn_fd<'a>() -> Result<BorrowedFd<'a>, sud::SudError> {
@@ -113,15 +114,34 @@ pub fn main_server() -> Result<(), sud::SudError> {
         }
     };
 
-    // Start the connection guard thread
-    let child_pid = child.id();
-    thread::spawn(move || conn_guard_thread(conn_fd, child_pid.try_into().unwrap()));
+    let child_pid = child.id() as i32;
 
-    let exit_status = match child.wait() {
-        Ok(exit_status) => exit_status,
-        Err(e) => {
-            send(conn_fd, response);
-            return Err(sud::SudError::IoError(e));
+    let exit_status = loop {
+        let wait_res = match child.try_wait() {
+            Ok(res) => res,
+            Err(e) => {
+                kill_pid(child_pid);
+                send(conn_fd, response);
+                return Err(sud::SudError::IoError(e));
+            }
+        };
+
+        if let Some(exit_status) = wait_res {
+            break exit_status;
+        }
+
+        let is_conn_inactive = match check_conn_closed(conn_fd) {
+            Ok(is_conn_inactive) => is_conn_inactive,
+            Err(e) => {
+                kill_pid(child_pid);
+                send(conn_fd, response);
+                return Err(sud::SudError::NixError(e));
+            }
+        };
+
+        if is_conn_inactive {
+            kill_pid(child_pid);
+            return Ok(());
         }
     };
 
