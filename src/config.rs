@@ -28,6 +28,7 @@ pub struct SudGlobalConfig {
     pub background_color: String,
     pub password_echo_enable: bool,
     pub password_echo: String,
+    pub persist_timeout: u64,
 }
 
 impl SudGlobalConfig {
@@ -100,6 +101,10 @@ impl SudGlobalConfig {
                     conf.password_echo = value;
                 }
 
+                "persist_timeout" => {
+                    conf.persist_timeout = value.parse::<u64>()?;
+                }
+
                 _ => {
                     return Err(sud::SudError::InvalidConfig(format!(
                         "Unsupported key \"{}\" for global options",
@@ -122,6 +127,7 @@ pub struct SudPolicy {
     pub weight: i32,
     pub index: i32,
     pub permit: bool,
+    pub persist: bool,
     pub original_user_group: SudPolicyUserGroup,
     pub target_user: Option<UserInfo>,
     pub cmd: Option<String>,
@@ -132,8 +138,10 @@ impl SudPolicy {
         let path = Path::new(SUD_CONFIG_PATH.as_str());
         let file = File::open(&path)?;
         let reader = BufReader::new(file);
-        let regex =
-            Regex::new(r"^(permit|deny)\s+(\S+)(?:\s+(?:as\s+(\S+)|cmd\s+(\S+))){0,2}$").unwrap();
+        let regex = Regex::new(
+            r"^(permit|deny)(?:\s+(persist))?\s+(\S+)(?:\s+(?:as\s+(\S+)|cmd\s+(\S+))){0,2}$",
+        )
+        .unwrap();
         let mut policies: Vec<SudPolicy> = Vec::new();
         let mut index = 0;
 
@@ -168,8 +176,22 @@ impl SudPolicy {
                 }
             };
 
+            let mut persist = false;
+
+            if let Some(opt) = caps.get(2).map(|m| m.as_str()) {
+                match opt {
+                    "persist" => persist = true,
+                    _ => {
+                        return Err(sud::SudError::InvalidConfig(format!(
+                            "Invalid policy format ({}, opt: {})",
+                            line, opt
+                        )));
+                    }
+                }
+            }
+
             let mut weight = 0;
-            let original_user_group_str = caps[2].to_string();
+            let original_user_group_str = caps[3].to_string();
 
             let original_user_group = if original_user_group_str.starts_with(':') {
                 SudPolicyUserGroup::Group((&original_user_group_str[1..]).to_string())
@@ -177,7 +199,7 @@ impl SudPolicy {
                 SudPolicyUserGroup::User(UserInfo::from_str(&original_user_group_str)?)
             };
 
-            let target_user = match caps.get(3).map(|m| m.as_str().to_string()) {
+            let target_user = match caps.get(4).map(|m| m.as_str().to_string()) {
                 Some(target_user) => {
                     weight += 1;
                     Some(UserInfo::from_str(&target_user)?)
@@ -185,7 +207,7 @@ impl SudPolicy {
                 None => None,
             };
 
-            let cmd = match caps.get(4).map(|m| m.as_str().to_string()) {
+            let cmd = match caps.get(5).map(|m| m.as_str().to_string()) {
                 Some(cmd) => {
                     weight += 1;
                     Some(cmd)
@@ -197,6 +219,7 @@ impl SudPolicy {
                 weight: weight,
                 index: index,
                 permit: permit,
+                persist: persist,
                 original_user_group: original_user_group,
                 target_user: target_user,
                 cmd: cmd,
@@ -209,12 +232,12 @@ impl SudPolicy {
     }
 }
 
-pub fn policy_is_permit(
-    policies: &Vec<SudPolicy>,
-    original_user: &UserInfo,
-    target_user: &UserInfo,
+pub fn policy_get_match<'a>(
+    policies: &'a Vec<SudPolicy>,
+    original_user: &'a UserInfo,
+    target_user: &'a UserInfo,
     cmd: String,
-) -> bool {
+) -> Option<&'a SudPolicy> {
     let mut matches: Vec<&SudPolicy> = Vec::new();
 
     for policy in policies {
@@ -247,7 +270,7 @@ pub fn policy_is_permit(
     }
 
     if matches.len() < 1 {
-        return false;
+        return None;
     }
 
     matches.sort_by(|a, b| {
@@ -261,5 +284,5 @@ pub fn policy_is_permit(
             .then_with(|| b.index.cmp(&a.index))
     });
 
-    matches[0].permit
+    Some(matches[0])
 }
