@@ -12,7 +12,6 @@ use crate::config::SudGlobalConfig;
 use crate::exec::sud_exec;
 use crate::utils::ProcessInfo;
 use clap;
-use libsystemd;
 use nix;
 use std::fmt;
 use std::io;
@@ -34,7 +33,6 @@ pub enum SudError {
     IoError(io::Error),
     ParseIntError(num::ParseIntError),
     NixError(nix::errno::Errno),
-    SystemdError(libsystemd::errors::SdError),
     ClapError(clap::error::Error),
 }
 
@@ -55,7 +53,6 @@ impl fmt::Display for SudError {
             SudError::IoError(e) => write!(f, "IO error ({}): {}", e.kind(), e.to_string()),
             SudError::ParseIntError(e) => write!(f, "Parse int error: {}", e.to_string()),
             SudError::NixError(e) => write!(f, "Error in nix function: {}", e.to_string()),
-            SudError::SystemdError(e) => write!(f, "Error in libsystemd: {}", e.to_string()),
             SudError::ClapError(e) => write!(f, "Error in args parsing: {}", e.to_string()),
         }
     }
@@ -76,12 +73,6 @@ impl From<num::ParseIntError> for SudError {
 impl From<nix::errno::Errno> for SudError {
     fn from(err: nix::errno::Errno) -> SudError {
         SudError::NixError(err)
-    }
-}
-
-impl From<libsystemd::errors::SdError> for SudError {
-    fn from(err: libsystemd::errors::SdError) -> SudError {
-        SudError::SystemdError(err)
     }
 }
 
@@ -137,9 +128,7 @@ impl SudResponseMsg {
     }
 }
 
-pub fn sud_handle(conn_fd: BorrowedFd) -> Result<Child, SudError> {
-    let global_config = SudGlobalConfig::load()?;
-
+pub fn sud_handle(conn_fd: BorrowedFd, global_config: &SudGlobalConfig) -> Result<Child, SudError> {
     let mut pinfo = ProcessInfo::from_conn(conn_fd)?;
 
     let original_userinfo = UserInfo::from_uid(pinfo.uid)?;
