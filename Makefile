@@ -36,8 +36,8 @@ test: target/release/$(TARGET)
 	systemctl stop sud.socket || true
 	install -Dm 755 target/release/$(TARGET) /tmp/sud
 	install -Dm 644 systemd/sud.socket /run/systemd/transient/sud.socket
-	install -Dm 644 /dev/null /run/systemd/transient/sud@.service
-	cat systemd/sud@.service.template | SUD_BIN=/tmp/sud envsubst > /run/systemd/transient/sud@.service
+	install -Dm 644 /dev/null /run/systemd/transient/sud.service
+	cat systemd/sud.service.template | SUD_BIN=/tmp/sud envsubst > /run/systemd/transient/sud.service
 	systemctl daemon-reload
 	systemctl start sud.socket
 

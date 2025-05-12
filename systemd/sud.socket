@@ -6,10 +6,11 @@
 
 [Unit]
 Description=Super User Daemon - privilege manager for systemd/Linux 
+Requires=sud.service
 
 [Socket]
 ListenStream=@sud_privilege_manager_socket
-Accept=yes
+Accept=no
 
 [Install]
 WantedBy=sockets.target

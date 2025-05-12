@@ -27,7 +27,7 @@ pub fn sud_exec(
     o_user: &UserInfo,
     t_user: &UserInfo,
     args: &SudCmdlineArgs,
-    global_conf: SudGlobalConfig,
+    global_conf: &SudGlobalConfig,
 ) -> Result<Child, sud::SudError> {
     let mut command = Command::new("/usr/bin/systemd-run");
 
@@ -59,7 +59,7 @@ pub fn sud_exec(
         None => {
             if global_conf.background_color_enable {
                 command.arg("--background");
-                command.arg(global_conf.background_color);
+                command.arg(global_conf.background_color.clone());
             }
         }
     };

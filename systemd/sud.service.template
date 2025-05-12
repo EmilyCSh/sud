@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 #
-# systemd/sud@.service.template
+# systemd/sud.service.template
 #
 # Copyright (C) Emily <info@emy.sh>
 
@@ -12,6 +12,7 @@ PartOf=sud.socket
 Type=exec
 ExecStart=${SUD_BIN} --daemon
 Environment=SUD_CONFIG_PATH=/etc/sud.conf
+StandardInput=socket
 StandardOutput=journal
 StandardError=journal
 ProtectSystem=strict

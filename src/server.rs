@@ -5,8 +5,8 @@
  *  Copyright (C) Emily <info@emy.sh>
  */
 
+use crate::config::SudGlobalConfig;
 use crate::sud::{self, SudMsgError, SudResponseMsg, sud_handle};
-use libsystemd::activation::{IsType, receive_descriptors_with_names};
 use nix::errno::Errno;
 use nix::sys::signal::{Signal, kill};
 use nix::sys::socket;
@@ -14,7 +14,10 @@ use nix::unistd::Pid;
 use std::os::fd::AsFd;
 use std::os::fd::AsRawFd;
 use std::os::fd::BorrowedFd;
-use std::os::fd::IntoRawFd;
+use std::os::fd::FromRawFd;
+use std::os::unix::net::UnixListener;
+use std::os::unix::net::UnixStream;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -56,36 +59,8 @@ fn check_conn_closed(conn_fd: BorrowedFd) -> Result<bool, Errno> {
     Ok(true)
 }
 
-fn get_conn_fd<'a>() -> Result<BorrowedFd<'a>, sud::SudError> {
-    let mut conn_fd = None;
-
-    let fds = receive_descriptors_with_names(true)?;
-
-    for (fd, name) in fds {
-        if name != "connection" {
-            continue;
-        }
-
-        if !fd.is_unix() {
-            continue;
-        }
-
-        let raw_fd = fd.into_raw_fd();
-
-        if raw_fd < 0 {
-            continue;
-        }
-
-        conn_fd = Some(unsafe { BorrowedFd::borrow_raw(raw_fd) });
-        break;
-    }
-
-    conn_fd.ok_or(sud::SudError::NotFound(
-        "Unable to find socket connection".into(),
-    ))
-}
-
-pub fn main_server() -> Result<(), sud::SudError> {
+fn handle_conn(stream: UnixStream, global_config: Arc<SudGlobalConfig>) {
+    let conn_fd = stream.as_fd();
     let mut response = SudResponseMsg::default();
     response.error = SudMsgError::Generic;
 
@@ -98,19 +73,19 @@ pub fn main_server() -> Result<(), sud::SudError> {
         msg
     }
 
-    let conn_fd = get_conn_fd()?;
-
     // Handle the connection
-    let mut child = match sud_handle(conn_fd) {
+    let mut child = match sud_handle(conn_fd, &*global_config) {
         Ok(child) => child,
         Err(sud::SudError::AuthFail(e)) => {
             response.error = SudMsgError::Auth;
             send(conn_fd, response);
-            return Err(sud::SudError::AuthFail(e));
+            eprintln!("{}", e);
+            return;
         }
         Err(e) => {
             send(conn_fd, response);
-            return Err(e);
+            eprintln!("{}", e);
+            return;
         }
     };
 
@@ -122,7 +97,8 @@ pub fn main_server() -> Result<(), sud::SudError> {
             Err(e) => {
                 kill_pid(child_pid);
                 send(conn_fd, response);
-                return Err(sud::SudError::IoError(e));
+                eprintln!("{}", e);
+                return;
             }
         };
 
@@ -135,13 +111,14 @@ pub fn main_server() -> Result<(), sud::SudError> {
             Err(e) => {
                 kill_pid(child_pid);
                 send(conn_fd, response);
-                return Err(sud::SudError::NixError(e));
+                eprintln!("{}", e);
+                return;
             }
         };
 
         if is_conn_inactive {
             kill_pid(child_pid);
-            return Ok(());
+            return;
         }
     };
 
@@ -149,7 +126,8 @@ pub fn main_server() -> Result<(), sud::SudError> {
         Some(code) => code,
         None => {
             send(conn_fd, response);
-            return Err(sud::SudError::NotFound("Error with waitpid".into()));
+            eprintln!("Error with waitpid");
+            return;
         }
     };
 
@@ -161,5 +139,25 @@ pub fn main_server() -> Result<(), sud::SudError> {
     );
 
     send(conn_fd, response);
+}
+
+pub fn main_server() -> Result<(), sud::SudError> {
+    let listener = unsafe { UnixListener::from_raw_fd(0) };
+    let global_config = Arc::new(SudGlobalConfig::load()?);
+
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                let global_config = Arc::clone(&global_config);
+
+                thread::spawn(move || {
+                    handle_conn(stream, global_config);
+                });
+            }
+            Err(e) => {
+                return Err(sud::SudError::IoError(e));
+            }
+        }
+    }
     Ok(())
 }
