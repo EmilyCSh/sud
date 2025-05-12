@@ -128,6 +128,7 @@ pub struct SudPolicy {
     pub index: i32,
     pub permit: bool,
     pub persist: bool,
+    pub nopass: bool,
     pub original_user_group: SudPolicyUserGroup,
     pub target_user: Option<UserInfo>,
     pub cmd: Option<String>,
@@ -139,7 +140,7 @@ impl SudPolicy {
         let file = File::open(&path)?;
         let reader = BufReader::new(file);
         let regex = Regex::new(
-            r"^(permit|deny)(?:\s+(persist))?\s+(\S+)(?:\s+(?:as\s+(\S+)|cmd\s+(\S+))){0,2}$",
+            r"^(permit|deny)(?:\s+(nopass|persist))?\s+(\S+)(?:\s+(?:as\s+(\S+)|cmd\s+(\S+))){0,2}$",
         )
         .unwrap();
         let mut policies: Vec<SudPolicy> = Vec::new();
@@ -177,10 +178,12 @@ impl SudPolicy {
             };
 
             let mut persist = false;
+            let mut nopass = false;
 
             if let Some(opt) = caps.get(2).map(|m| m.as_str()) {
                 match opt {
                     "persist" => persist = true,
+                    "nopass" => nopass = true,
                     _ => {
                         return Err(sud::SudError::InvalidConfig(format!(
                             "Invalid policy format ({}, opt: {})",
@@ -220,6 +223,7 @@ impl SudPolicy {
                 index: index,
                 permit: permit,
                 persist: persist,
+                nopass: nopass,
                 original_user_group: original_user_group,
                 target_user: target_user,
                 cmd: cmd,

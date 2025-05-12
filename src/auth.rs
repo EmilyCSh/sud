@@ -165,6 +165,10 @@ pub fn sud_auth(
         return Ok(false);
     }
 
+    if policy.nopass {
+        return Ok(true);
+    }
+
     if check_persist(auth_persists.clone(), o_user) {
         return Ok(true);
     }
