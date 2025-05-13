@@ -9,7 +9,13 @@ use crate::auth::SudAuthPersist;
 use crate::config::SudGlobalConfig;
 use crate::sud::{self, SudMsgError, SudResponseMsg, sud_handle};
 use nix::errno::Errno;
+use nix::poll::PollFd;
+use nix::poll::PollFlags;
+use nix::poll::PollTimeout;
+use nix::poll::poll;
 use nix::sys::signal::{Signal, kill};
+use nix::sys::signalfd::SigSet;
+use nix::sys::signalfd::SignalFd;
 use nix::sys::socket;
 use nix::unistd::Pid;
 use std::os::fd::AsFd;
@@ -41,26 +47,6 @@ fn kill_pid(pid: i32) {
     }
 }
 
-fn check_conn_closed(conn_fd: BorrowedFd) -> Result<bool, Errno> {
-    use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
-
-    let pollfd = PollFd::new(
-        conn_fd.as_fd(),
-        PollFlags::POLLHUP | PollFlags::POLLERR | PollFlags::POLLNVAL,
-    );
-
-    let nfds = match poll(&mut [pollfd], PollTimeout::ZERO) {
-        Err(Errno::EINTR) => return Ok(false),
-        nfds => nfds?,
-    };
-
-    if nfds <= 0 {
-        return Ok(false);
-    }
-
-    Ok(true)
-}
-
 fn handle_conn(
     stream: UnixStream,
     global_config: Arc<SudGlobalConfig>,
@@ -78,6 +64,26 @@ fn handle_conn(
         );
         msg
     }
+
+    let mut sigset = SigSet::empty();
+    sigset.add(Signal::SIGCHLD);
+    match sigset.thread_block() {
+        Err(e) => {
+            send(conn_fd, response);
+            eprintln!("{}", e);
+            return;
+        }
+        _ => {}
+    }
+
+    let signalfd = match SignalFd::new(&sigset) {
+        Ok(signalfd) => signalfd,
+        Err(e) => {
+            send(conn_fd, response);
+            eprintln!("{}", e);
+            return;
+        }
+    };
 
     // Handle the connection
     let mut child = match sud_handle(conn_fd, &*global_config, auth_persists) {
@@ -105,34 +111,45 @@ fn handle_conn(
 
     let child_pid = child.id() as i32;
 
+    let mut pollfds = [
+        PollFd::new(signalfd.as_fd(), PollFlags::POLLIN),
+        PollFd::new(
+            conn_fd.as_fd(),
+            PollFlags::POLLHUP | PollFlags::POLLERR | PollFlags::POLLNVAL,
+        ),
+    ];
+
     let exit_status = loop {
-        let wait_res = match child.try_wait() {
-            Ok(res) => res,
+        match poll(&mut pollfds, PollTimeout::NONE) {
+            Err(Errno::EINTR) => continue,
             Err(e) => {
                 kill_pid(child_pid);
                 send(conn_fd, response);
                 eprintln!("{}", e);
                 return;
             }
-        };
+            Ok(_) => {
+                if pollfds[0].any().unwrap_or_default() {
+                    let wait_res = match child.try_wait() {
+                        Ok(res) => res,
+                        Err(e) => {
+                            kill_pid(child_pid);
+                            send(conn_fd, response);
+                            eprintln!("{}", e);
+                            return;
+                        }
+                    };
 
-        if let Some(exit_status) = wait_res {
-            break exit_status;
-        }
+                    if let Some(exit_status) = wait_res {
+                        break exit_status;
+                    }
+                }
 
-        let is_conn_inactive = match check_conn_closed(conn_fd) {
-            Ok(is_conn_inactive) => is_conn_inactive,
-            Err(e) => {
-                kill_pid(child_pid);
-                send(conn_fd, response);
-                eprintln!("{}", e);
-                return;
+                if pollfds[1].any().unwrap_or_default() {
+                    kill_pid(child_pid);
+                    return;
+                }
             }
-        };
-
-        if is_conn_inactive {
-            kill_pid(child_pid);
-            return;
         }
     };
 
