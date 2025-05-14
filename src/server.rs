@@ -67,14 +67,6 @@ fn handle_conn(
 
     let mut sigset = SigSet::empty();
     sigset.add(Signal::SIGCHLD);
-    match sigset.thread_block() {
-        Err(e) => {
-            send(conn_fd, response);
-            eprintln!("{}", e);
-            return;
-        }
-        _ => {}
-    }
 
     let signalfd = match SignalFd::new(&sigset) {
         Ok(signalfd) => signalfd,
@@ -129,9 +121,13 @@ fn handle_conn(
                 return;
             }
             Ok(_) => {
-                if pollfds[0].any().unwrap_or_default() {
-                    let wait_res = match child.try_wait() {
-                        Ok(res) => res,
+                let signal_ready = pollfds[0]
+                    .revents()
+                    .map_or(false, |r| r.contains(PollFlags::POLLIN));
+
+                if signal_ready {
+                    let signal = match signalfd.read_signal() {
+                        Ok(s) => s,
                         Err(e) => {
                             kill_pid(child_pid);
                             send(conn_fd, response);
@@ -140,8 +136,22 @@ fn handle_conn(
                         }
                     };
 
-                    if let Some(exit_status) = wait_res {
-                        break exit_status;
+                    if let Some(signal) = signal {
+                        if signal.ssi_pid == child_pid as u32 {
+                            let wait_res = match child.try_wait() {
+                                Ok(res) => res,
+                                Err(e) => {
+                                    kill_pid(child_pid);
+                                    send(conn_fd, response);
+                                    eprintln!("{}", e);
+                                    return;
+                                }
+                            };
+
+                            if let Some(exit_status) = wait_res {
+                                break exit_status;
+                            }
+                        }
                     }
                 }
 
@@ -176,6 +186,10 @@ pub fn main_server() -> Result<(), sud::SudError> {
     let listener = unsafe { UnixListener::from_raw_fd(0) };
     let global_config = Arc::new(SudGlobalConfig::load()?);
     let auth_persists: Arc<Mutex<Vec<SudAuthPersist>>> = Arc::new(Mutex::new(Vec::new()));
+
+    let mut sigset = SigSet::empty();
+    sigset.add(Signal::SIGCHLD);
+    sigset.thread_block()?;
 
     for stream in listener.incoming() {
         match stream {
