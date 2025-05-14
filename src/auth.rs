@@ -8,6 +8,7 @@
 
 use crate::args::SudCmdlineArgs;
 use crate::c_ffi;
+use crate::config::PersistMode;
 use crate::config::{ConfigAuthMode, SudGlobalConfig, SudPolicy, policy_get_match};
 use crate::sud;
 use crate::utils::ProcessInfo;
@@ -130,6 +131,9 @@ impl UserInfo {
 pub struct SudAuthPersist {
     uid: Uid,
     valid_time: u64,
+    ppid: unistd::Pid,
+    session: unistd::Pid,
+    ttydev: Option<i32>,
 }
 
 pub fn sud_auth(
@@ -169,7 +173,7 @@ pub fn sud_auth(
         return Ok(true);
     }
 
-    if check_persist(auth_persists.clone(), o_user) {
+    if check_persist(auth_persists.clone(), global_conf, o_user, pinfo) {
         return Ok(true);
     }
 
@@ -182,7 +186,7 @@ pub fn sud_auth(
     };
 
     if is_auth && policy.persist {
-        add_persist(auth_persists.clone(), global_conf, o_user);
+        add_persist(auth_persists.clone(), global_conf, o_user, pinfo);
     }
 
     Ok(is_auth)
@@ -192,34 +196,79 @@ fn add_persist(
     auth_persists: Arc<Mutex<Vec<SudAuthPersist>>>,
     global_conf: &SudGlobalConfig,
     o_user: &UserInfo,
+    pinfo: &ProcessInfo,
 ) {
+    if global_conf.persist_mode == PersistMode::Tty && pinfo.ttydev.is_none() {
+        return;
+    }
+
     let mut auth_persists = auth_persists.lock().unwrap();
     let current_time = std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_secs();
 
-    auth_persists.retain(|auth_persist| auth_persist.uid != o_user.user.uid.into());
+    match global_conf.persist_mode {
+        PersistMode::Global => {
+            auth_persists.retain(|auth_persist| auth_persist.uid != o_user.user.uid.into())
+        }
+        PersistMode::Tty => {
+            auth_persists.retain(|auth_persist| {
+                !(auth_persist.uid == o_user.user.uid.into()
+                    && auth_persist.session == pinfo.session)
+            });
+        }
+        PersistMode::Ppid => {
+            auth_persists.retain(|auth_persist| {
+                !(auth_persist.uid == o_user.user.uid.into() && auth_persist.ppid == pinfo.ppid)
+            });
+        }
+    }
+
     auth_persists.push(SudAuthPersist {
         uid: o_user.user.uid.into(),
         valid_time: current_time + global_conf.persist_timeout,
+        ppid: pinfo.ppid,
+        session: pinfo.session,
+        ttydev: pinfo.ttydev,
     });
 }
 
-fn check_persist(auth_persists: Arc<Mutex<Vec<SudAuthPersist>>>, o_user: &UserInfo) -> bool {
+fn check_persist(
+    auth_persists: Arc<Mutex<Vec<SudAuthPersist>>>,
+    global_conf: &SudGlobalConfig,
+    o_user: &UserInfo,
+    pinfo: &ProcessInfo,
+) -> bool {
     let auth_persists = auth_persists.lock().unwrap();
     let current_time = std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_secs();
 
-    for auth_persist in &*auth_persists {
-        if auth_persist.uid == o_user.user.uid.into() && current_time < auth_persist.valid_time {
-            return true;
-        }
-    }
+    auth_persists
+        .iter()
+        .find(|auth| auth.uid == o_user.user.uid.into())
+        .map_or(false, |auth| {
+            if current_time >= auth.valid_time {
+                return false;
+            }
 
-    return false;
+            match global_conf.persist_mode {
+                PersistMode::Global => true,
+                PersistMode::Tty => {
+                    if auth.session != pinfo.session {
+                        return false;
+                    }
+
+                    match (&auth.ttydev, &pinfo.ttydev) {
+                        (Some(a), Some(b)) => a == b,
+                        _ => false,
+                    }
+                }
+                PersistMode::Ppid => auth.ppid == pinfo.ppid,
+            }
+        })
 }
 
 pub fn clear_persist(auth_persists: Arc<Mutex<Vec<SudAuthPersist>>>, o_user: &UserInfo) {

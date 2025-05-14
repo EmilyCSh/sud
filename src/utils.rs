@@ -14,6 +14,7 @@ use nix::unistd::isatty;
 use std::env;
 use std::fs;
 use std::fs::{File, OpenOptions};
+use std::io::Read;
 use std::io::{self, ErrorKind};
 use std::os::fd::{AsRawFd, BorrowedFd};
 use std::os::linux::net::SocketAddrExt;
@@ -28,10 +29,13 @@ pub struct ProcessInfo {
     pub pid: unistd::Pid,
     pub uid: unistd::Uid,
     pub gid: unistd::Gid,
+    pub ppid: unistd::Pid,
+    pub session: unistd::Pid,
     pub stdin: File,
     pub stdout: File,
     pub stderr: File,
     pub tty: Option<File>,
+    pub ttydev: Option<i32>,
     pub cwd: PathBuf,
     pub exe: PathBuf,
     pub argv: Vec<String>,
@@ -91,6 +95,7 @@ impl ProcessInfo {
         let exe = fs::read_link(format!("/proc/{}/exe", peercred.pid()))?;
         let cmdline_buf = fs::read(format!("/proc/{}/cmdline", peercred.pid()))?;
         let envp_buf = fs::read(format!("/proc/{}/environ", peercred.pid()))?;
+        let (ppid, session, tty_nr) = get_stat_pid(peercred.pid())?;
 
         let argv: Vec<String> = cmdline_buf
             .split(|&b| b == 0)
@@ -108,10 +113,13 @@ impl ProcessInfo {
             pid: unistd::Pid::from_raw(peercred.pid()),
             uid: unistd::Uid::from_raw(peercred.uid()),
             gid: unistd::Gid::from_raw(peercred.gid()),
+            ppid: unistd::Pid::from_raw(ppid),
+            session: unistd::Pid::from_raw(session),
             stdin: stdin,
             stdout: stdout,
             stderr: stderr,
             tty: tty,
+            ttydev: tty_nr,
             cwd: cwd,
             exe: exe,
             argv: argv,
@@ -198,4 +206,47 @@ pub fn unix_socket_connect(socket_path: &str, timeout: usize) -> io::Result<Unix
 
         sleep(Duration::from_secs(1));
     }
+}
+
+fn get_stat_pid(pid: i32) -> io::Result<(i32, i32, Option<i32>)> {
+    let path = format!("/proc/{}/stat", pid);
+    let mut file = File::open(&path)?;
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+
+    let _open_paren = contents
+        .find('(')
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing opening parenthesis"))?;
+    let close_paren = contents
+        .rfind(')')
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing closing parenthesis"))?;
+
+    let after_comm = &contents[close_paren + 2..];
+    let fields: Vec<&str> = after_comm.split_whitespace().collect();
+
+    if fields.len() < 2 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "not enough fields after comm",
+        ));
+    }
+
+    let ppid = fields[1]
+        .parse::<i32>()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("invalid PPID: {}", e)))?;
+
+    let session = fields[3].parse::<i32>().map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("invalid session: {}", e),
+        )
+    })?;
+
+    let tty_nr = fields[4]
+        .parse::<i32>()
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("invalid tty_nr: {}", e)))
+        .ok()
+        .filter(|&n| n > 0);
+
+    Ok((ppid, session, tty_nr))
 }
