@@ -3,5 +3,6 @@ global background_color_enable true
 global background_color 41
 global password_echo_enable true
 global password_echo *
+global persist_mode tty
 
 permit :wheel

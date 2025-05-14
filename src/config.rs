@@ -21,6 +21,14 @@ pub enum ConfigAuthMode {
     Pam = 0x01,
 }
 
+#[derive(Debug, Default, PartialEq)]
+pub enum PersistMode {
+    Global,
+    #[default]
+    Tty,
+    Ppid,
+}
+
 #[derive(Debug, Default)]
 pub struct SudGlobalConfig {
     pub auth_mode: ConfigAuthMode,
@@ -29,6 +37,7 @@ pub struct SudGlobalConfig {
     pub password_echo_enable: bool,
     pub password_echo: String,
     pub persist_timeout: u64,
+    pub persist_mode: PersistMode,
 }
 
 impl SudGlobalConfig {
@@ -104,6 +113,18 @@ impl SudGlobalConfig {
                 "persist_timeout" => {
                     conf.persist_timeout = value.parse::<u64>()?;
                 }
+
+                "persist_mode" => match value.as_str() {
+                    "global" => conf.persist_mode = PersistMode::Global,
+                    "tty" => conf.persist_mode = PersistMode::Tty,
+                    "ppid" => conf.persist_mode = PersistMode::Ppid,
+                    _ => {
+                        return Err(sud::SudError::InvalidConfig(format!(
+                            "Unsupported value \"{}\" for option \"{}\"",
+                            value, subkey
+                        )));
+                    }
+                },
 
                 _ => {
                     return Err(sud::SudError::InvalidConfig(format!(
