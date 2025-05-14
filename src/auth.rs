@@ -13,6 +13,8 @@ use crate::config::{ConfigAuthMode, SudGlobalConfig, SudPolicy, policy_get_match
 use crate::sud;
 use crate::utils::ProcessInfo;
 use nix::fcntl;
+use nix::time::ClockId;
+use nix::time::clock_gettime;
 use nix::unistd;
 use nix::unistd::Uid;
 use passwd_rs::AccountStatus;
@@ -26,6 +28,7 @@ use std::os::fd::AsRawFd;
 use std::os::raw::c_int;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Duration;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use termios::{ECHO, ICANON, TCSANOW, Termios};
@@ -130,7 +133,7 @@ impl UserInfo {
 
 pub struct SudAuthPersist {
     uid: Uid,
-    valid_time: u64,
+    valid_time: Duration,
     ppid: unistd::Pid,
     session: unistd::Pid,
     ttydev: Option<i32>,
@@ -203,10 +206,8 @@ fn add_persist(
     }
 
     let mut auth_persists = auth_persists.lock().unwrap();
-    let current_time = std::time::SystemTime::now()
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let ts = clock_gettime(ClockId::CLOCK_BOOTTIME).unwrap();
+    let current_time = Duration::new(ts.tv_sec() as u64, ts.tv_nsec() as u32);
 
     match global_conf.persist_mode {
         PersistMode::Global => {
@@ -227,7 +228,7 @@ fn add_persist(
 
     auth_persists.push(SudAuthPersist {
         uid: o_user.user.uid.into(),
-        valid_time: current_time + global_conf.persist_timeout,
+        valid_time: current_time + Duration::from_secs(global_conf.persist_timeout),
         ppid: pinfo.ppid,
         session: pinfo.session,
         ttydev: pinfo.ttydev,
@@ -241,10 +242,8 @@ fn check_persist(
     pinfo: &ProcessInfo,
 ) -> bool {
     let auth_persists = auth_persists.lock().unwrap();
-    let current_time = std::time::SystemTime::now()
-        .duration_since(std::time::SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let ts = clock_gettime(ClockId::CLOCK_BOOTTIME).unwrap();
+    let current_time = Duration::new(ts.tv_sec() as u64, ts.tv_nsec() as u32);
 
     auth_persists
         .iter()
