@@ -30,7 +30,9 @@ pub struct ProcessInfo {
     pub uid: unistd::Uid,
     pub gid: unistd::Gid,
     pub ppid: unistd::Pid,
+    pub ppid_starttime: u64,
     pub session: unistd::Pid,
+    pub session_starttime: u64,
     pub stdin: File,
     pub stdout: File,
     pub stderr: File,
@@ -95,7 +97,45 @@ impl ProcessInfo {
         let exe = fs::read_link(format!("/proc/{}/exe", peercred.pid()))?;
         let cmdline_buf = fs::read(format!("/proc/{}/cmdline", peercred.pid()))?;
         let envp_buf = fs::read(format!("/proc/{}/environ", peercred.pid()))?;
-        let (ppid, session, tty_nr) = get_stat_pid(peercred.pid())?;
+
+        let pid_stat_infos = get_stat_pid(peercred.pid())?;
+
+        let ppid = pid_stat_infos[3].parse::<i32>().map_err(|e| {
+            io::Error::new(io::ErrorKind::InvalidData, format!("invalid PPID: {}", e))
+        })?;
+
+        let session = pid_stat_infos[5].parse::<i32>().map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid session: {}", e),
+            )
+        })?;
+
+        let tty_nr = pid_stat_infos[6]
+            .parse::<i32>()
+            .map_err(|e| {
+                io::Error::new(io::ErrorKind::InvalidData, format!("invalid tty_nr: {}", e))
+            })
+            .ok()
+            .filter(|&n| n > 0);
+
+        let ppid_stat_infos = get_stat_pid(ppid)?;
+
+        let ppid_starttime = ppid_stat_infos[21].parse::<u64>().map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid starttime: {}", e),
+            )
+        })?;
+
+        let session_stat_infos = get_stat_pid(session)?;
+
+        let session_starttime = session_stat_infos[21].parse::<u64>().map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid starttime: {}", e),
+            )
+        })?;
 
         let argv: Vec<String> = cmdline_buf
             .split(|&b| b == 0)
@@ -114,7 +154,9 @@ impl ProcessInfo {
             uid: unistd::Uid::from_raw(peercred.uid()),
             gid: unistd::Gid::from_raw(peercred.gid()),
             ppid: unistd::Pid::from_raw(ppid),
+            ppid_starttime: ppid_starttime,
             session: unistd::Pid::from_raw(session),
+            session_starttime: session_starttime,
             stdin: stdin,
             stdout: stdout,
             stderr: stderr,
@@ -208,7 +250,7 @@ pub fn unix_socket_connect(socket_path: &str, timeout: usize) -> io::Result<Unix
     }
 }
 
-fn get_stat_pid(pid: i32) -> io::Result<(i32, i32, Option<i32>)> {
+fn get_stat_pid(pid: i32) -> io::Result<Vec<String>> {
     let path = format!("/proc/{}/stat", pid);
     let mut file = File::open(&path)?;
     let mut contents = String::new();
@@ -217,36 +259,18 @@ fn get_stat_pid(pid: i32) -> io::Result<(i32, i32, Option<i32>)> {
     let _open_paren = contents
         .find('(')
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing opening parenthesis"))?;
-    let close_paren = contents
+    let _close_paren = contents
         .rfind(')')
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing closing parenthesis"))?;
 
-    let after_comm = &contents[close_paren + 2..];
-    let fields: Vec<&str> = after_comm.split_whitespace().collect();
+    let fields: Vec<String> = contents.split_whitespace().map(str::to_string).collect();
 
-    if fields.len() < 2 {
+    if fields.len() < 52 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "not enough fields after comm",
+            "not enough fields",
         ));
     }
 
-    let ppid = fields[1]
-        .parse::<i32>()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("invalid PPID: {}", e)))?;
-
-    let session = fields[3].parse::<i32>().map_err(|e| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("invalid session: {}", e),
-        )
-    })?;
-
-    let tty_nr = fields[4]
-        .parse::<i32>()
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("invalid tty_nr: {}", e)))
-        .ok()
-        .filter(|&n| n > 0);
-
-    Ok((ppid, session, tty_nr))
+    Ok(fields)
 }

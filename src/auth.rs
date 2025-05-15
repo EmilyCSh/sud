@@ -135,7 +135,9 @@ pub struct SudAuthPersist {
     uid: Uid,
     valid_time: Duration,
     ppid: unistd::Pid,
+    ppid_starttime: u64,
     session: unistd::Pid,
+    session_starttime: u64,
     ttydev: Option<i32>,
 }
 
@@ -216,12 +218,15 @@ fn add_persist(
         PersistMode::Tty => {
             auth_persists.retain(|auth_persist| {
                 !(auth_persist.uid == o_user.user.uid.into()
-                    && auth_persist.session == pinfo.session)
+                    && auth_persist.session == pinfo.session
+                    && auth_persist.session_starttime == pinfo.session_starttime)
             });
         }
         PersistMode::Ppid => {
             auth_persists.retain(|auth_persist| {
-                !(auth_persist.uid == o_user.user.uid.into() && auth_persist.ppid == pinfo.ppid)
+                !(auth_persist.uid == o_user.user.uid.into()
+                    && auth_persist.ppid == pinfo.ppid
+                    && auth_persist.ppid_starttime == pinfo.ppid_starttime)
             });
         }
     }
@@ -230,7 +235,9 @@ fn add_persist(
         uid: o_user.user.uid.into(),
         valid_time: current_time + Duration::from_secs(global_conf.persist_timeout),
         ppid: pinfo.ppid,
+        ppid_starttime: pinfo.ppid_starttime,
         session: pinfo.session,
+        session_starttime: pinfo.session_starttime,
         ttydev: pinfo.ttydev,
     });
 }
@@ -247,26 +254,23 @@ fn check_persist(
 
     auth_persists
         .iter()
-        .find(|auth| auth.uid == o_user.user.uid.into())
-        .map_or(false, |auth| {
-            if current_time >= auth.valid_time {
-                return false;
-            }
-
-            match global_conf.persist_mode {
-                PersistMode::Global => true,
-                PersistMode::Tty => {
-                    if auth.session != pinfo.session {
-                        return false;
+        .filter(|auth| auth.uid == o_user.user.uid.into())
+        .any(|auth| {
+            current_time < auth.valid_time
+                && match global_conf.persist_mode {
+                    PersistMode::Global => true,
+                    PersistMode::Tty => {
+                        auth.session == pinfo.session
+                            && auth.session_starttime == pinfo.session_starttime
+                            && match (&auth.ttydev, &pinfo.ttydev) {
+                                (Some(a), Some(b)) => a == b,
+                                _ => false,
+                            }
                     }
-
-                    match (&auth.ttydev, &pinfo.ttydev) {
-                        (Some(a), Some(b)) => a == b,
-                        _ => false,
+                    PersistMode::Ppid => {
+                        auth.ppid == pinfo.ppid && auth.ppid_starttime == pinfo.ppid_starttime
                     }
                 }
-                PersistMode::Ppid => auth.ppid == pinfo.ppid,
-            }
         })
 }
 
