@@ -38,6 +38,7 @@ pub struct SudGlobalConfig {
     pub password_echo: String,
     pub persist_timeout: u64,
     pub persist_mode: PersistMode,
+    pub sud_enabled: bool,
 }
 
 impl SudGlobalConfig {
@@ -118,6 +119,17 @@ impl SudGlobalConfig {
                     "global" => conf.persist_mode = PersistMode::Global,
                     "tty" => conf.persist_mode = PersistMode::Tty,
                     "ppid" => conf.persist_mode = PersistMode::Ppid,
+                    _ => {
+                        return Err(sud::SudError::InvalidConfig(format!(
+                            "Unsupported value \"{}\" for option \"{}\"",
+                            value, subkey
+                        )));
+                    }
+                },
+
+                "i_know_sud_is_insecure_but_i_want_to_use_it_anyway" => match value.as_str() {
+                    "true" => conf.sud_enabled = true,
+                    "false" => conf.sud_enabled = false,
                     _ => {
                         return Err(sud::SudError::InvalidConfig(format!(
                             "Unsupported value \"{}\" for option \"{}\"",
