@@ -113,11 +113,10 @@ impl ProcessInfo {
 
         let tty_nr = pid_stat_infos[6]
             .parse::<i32>()
+            .map(|n| if n > 0 { Some(n) } else { None })
             .map_err(|e| {
                 io::Error::new(io::ErrorKind::InvalidData, format!("invalid tty_nr: {}", e))
-            })
-            .ok()
-            .filter(|&n| n > 0);
+            })?;
 
         let ppid_stat_infos = get_stat_pid(ppid)?;
 
