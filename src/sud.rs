@@ -145,6 +145,12 @@ pub fn sud_handle(
 
     let target_userinfo = args.get_user()?;
 
+    if !global_config.sud_enabled {
+        return Err(SudError::AuthFail(format!(
+            "You have not accepted that sud is insecure in the config"
+        )));
+    }
+
     if args.clear_persist {
         clear_persist(auth_persists.clone(), &original_userinfo);
         return Ok(None);
