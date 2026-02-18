@@ -9,7 +9,7 @@ use libc::{calloc, free, size_t, strdup};
 use secure_string::SecureVec;
 use std::ffi::{CStr, CString};
 use std::mem;
-use std::os::raw::{c_int, c_void};
+use std::os::raw::{c_int, c_void, c_char};
 
 pub mod c_pam {
     use std::os::raw::{c_char, c_int, c_void};
@@ -117,7 +117,7 @@ extern "C" fn pam_conv<T: PamConversation>(
                 if let Ok(mut handler_response) = conv.prompt_echo(msg_str) {
                     if handler_response.unsecure().len() < PAM_MAX_RESP_SIZE {
                         r.resp =
-                            unsafe { strdup(handler_response.unsecure().as_ptr() as *const i8) };
+                            unsafe { strdup(handler_response.unsecure().as_ptr() as *const c_char) };
                         handler_response.zero_out();
 
                         r.resp_retcode = 0;
@@ -132,7 +132,7 @@ extern "C" fn pam_conv<T: PamConversation>(
                 if let Ok(mut handler_response) = conv.prompt_noecho(msg_str) {
                     if handler_response.unsecure().len() < PAM_MAX_RESP_SIZE {
                         r.resp =
-                            unsafe { strdup(handler_response.unsecure().as_ptr() as *const i8) };
+                            unsafe { strdup(handler_response.unsecure().as_ptr() as *const c_char) };
                         handler_response.zero_out();
 
                         r.resp_retcode = 0;

@@ -8,6 +8,7 @@
 use crate::sud;
 use secure_string::SecureVec;
 use std::ffi::{CStr, CString};
+use std::os::raw::c_char;
 
 mod c_crypt {
     use std::os::raw::c_char;
@@ -20,7 +21,7 @@ mod c_crypt {
 pub fn crypt(passwd: &SecureVec<u8>, salt: String) -> Result<String, sud::SudError> {
     unsafe {
         let hash = c_crypt::crypt(
-            passwd.unsecure().as_ptr() as *const i8,
+            passwd.unsecure().as_ptr() as *const c_char,
             CString::new(salt).unwrap().as_ptr(),
         );
 
