@@ -1,0 +1,70 @@
+name: CI - build (linux)
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    name: Build for targets
+    runs-on: ubuntu-latest
+    container:
+      image: debian:testing-slim
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [ x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu ]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install base packages
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends curl ca-certificates build-essential pkg-config libssl-dev git
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Add target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install system dependencies (Debian)
+        shell: bash
+        run: |
+          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+            dpkg --add-architecture arm64
+            apt-get update
+            apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross libpam0g-dev:arm64 libcrypt-dev:arm64
+            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          else
+            apt-get update
+            apt-get install -y --no-install-recommends libpam0g-dev libcrypt-dev
+          fi
+
+      - name: Build (debug)
+        run: cargo build --target ${{ matrix.target }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sud-${{ matrix.target }}-debug
+          path: target/${{ matrix.target }}/debug/
